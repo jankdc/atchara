@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+coverage
+
+# OS/IDE
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Logs and env
+*.log
+*.local
+.env
+.env.local
+.env.*.local
+
+# Benchmarks/profiling
+benchmark-results.*
+./memory/
+profiles/
+stderr
+stdout
+
+# Rust build artifacts
+**/target/
+
+# napi-rs generated artifacts (packages/native)
+*.node
+packages/native/index.js
+packages/native/index.d.ts
+packages/native/profile/index.js
+packages/native/profile/index.d.ts

@@ -1,0 +1,36 @@
+{
+  "name": "@atchara/core",
+  "version": "0.1.0",
+  "description": "Core types, interfaces, and utilities for Atchara",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/release/index.d.ts",
+      "import": "./dist/release/index.js",
+      "require": "./dist/release/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run build:release && npm run build:profile",
+    "build:release": "tsup --config tsup.release.config.ts",
+    "build:profile": "tsup --config tsup.profile.config.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.37.0",
+    "@typescript-eslint/parser": "^8.37.0",
+    "eslint": "^9.31.0",
+    "eslint-config-prettier": "^9.1.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

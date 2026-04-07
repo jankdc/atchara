@@ -1,0 +1,44 @@
+[workspace]
+members = [".", "convert-to-sync-macro"]
+
+[package]
+name = "atchara-native"
+version = "0.1.0"
+edition = "2024"
+description = "Native Node.js implementation of Atchara JSON parser"
+repository = "https://github.com/jankdc/atchara"
+homepage = "https://github.com/jankdc/atchara"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+convert-to-sync-macro = { path = "convert-to-sync-macro" }
+redb = "2"
+mimalloc = "0.1"
+napi = { version = "3.8", default-features = false, features = ["napi8"] }
+napi-derive = "3.5"
+regex = "1"
+simdutf8 = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
+
+[build-dependencies]
+napi-build = "2.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+debug = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
+debug-assertions = false
+overflow-checks = false
+lto = false
+codegen-units = 16
+opt-level = 3
+strip = false

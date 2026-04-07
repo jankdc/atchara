@@ -1,0 +1,40 @@
+{
+  "name": "@atchara/native",
+  "version": "0.1.0",
+  "description": "Native Node.js bindings for Atchara",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "atchara",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "clean": "rm -rf *.node index.js index.d.ts profile && cargo clean",
+    "build": "RUSTUP_TOOLCHAIN=nightly napi build --platform --release --strip",
+    "build:debug": "RUSTUP_TOOLCHAIN=nightly napi build --platform",
+    "build:profile": "RUSTUP_TOOLCHAIN=nightly napi build --platform --release",
+    "prepublishOnly": "napi prepublish -t npm",
+    "artifacts": "napi artifacts",
+    "test": "RUSTUP_TOOLCHAIN=nightly cargo test --lib",
+    "lint": "RUSTUP_TOOLCHAIN=nightly cargo clippy",
+    "typecheck": "RUSTUP_TOOLCHAIN=nightly cargo check"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1",
+    "vitest": "^4.0.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

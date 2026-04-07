@@ -1,0 +1,57 @@
+{
+  "name": "atchara-monorepo",
+  "private": true,
+  "description": "Atchara monorepo - A fast, schema-aware JSON parser with native bindings",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "clean": "npm run clean --workspaces --if-present",
+    "build": "npm run build -w @atchara/core && npm run build -w @atchara/native && npm run build -w atchara",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "release": "changeset publish --access public",
+    "prepare": "simple-git-hooks"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0",
+    "nano-staged": "^0.8.0",
+    "prettier": "^3.2.4",
+    "simple-git-hooks": "^2.13.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.52.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx nano-staged"
+  },
+  "nano-staged": {
+    "packages/atchara/**/*.{js,ts}": [
+      "npm run lint -w atchara --",
+      "prettier --write"
+    ],
+    "packages/core/**/*.{js,ts}": [
+      "npm run lint -w @atchara/core --",
+      "prettier --write"
+    ],
+    "packages/native/**/*.rs": [
+      "sh -c 'npm run lint -w @atchara/native'",
+      "rustfmt --edition 2024"
+    ],
+    "packages/bench/**/*.{js,ts}": [
+      "prettier --write"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write"
+    ]
+  }
+}

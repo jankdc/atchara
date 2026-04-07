@@ -1,0 +1,17 @@
+src
+tests
+.github
+.vscode
+.idea
+coverage
+*.log
+.DS_Store
+.env*
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+.eslintrc.json
+.prettierrc.json
+.prettierignore
+*.test.ts
+*.spec.ts

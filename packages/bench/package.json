@@ -1,0 +1,34 @@
+{
+  "name": "@atchara/bench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Benchmarking suite for the Atchara JSON parser",
+  "type": "module",
+  "scripts": {
+    "bench": "npm run bench:direct && npm run bench:http",
+    "bench:http": "start-test serve http://localhost:3000/healthcheck load-test",
+    "bench:direct": "vitest bench --run",
+    "serve": "node ./scripts/serve-benchmarks.js",
+    "clean": "rm -rf benchmark-results.json benchmark-results.html profiles",
+    "load-test": "k6 run scripts/run-load-test.js",
+    "profile:bench": "node ./scenarios/${SCENARIO}.js",
+    "profile:memory": "node scripts/profile-memory.js",
+    "visualize:bench": "node scripts/visualize-benchmarks.js && open ./benchmark-results.html",
+    "visualize:memory": "node scripts/visualize-memory.js",
+    "generate:large": "node scripts/generate-large-json.js"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.19.6",
+    "atchara": "0.1.0",
+    "hono": "^4.10.6",
+    "joi": "^17.13.3",
+    "start-server-and-test": "^2.1.3",
+    "valibot": "^0.30.0",
+    "vitest": "^4.0.4",
+    "yup": "^1.7.1",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
