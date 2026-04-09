@@ -1,38 +1,188 @@
 name: Release
 
-# Disabled: Publishing will be done manually for now
-# on:
-#   push:
-#     branches: [main]
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 jobs:
+  build-native:
+    name: Build native (${{ matrix.settings.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: macos-latest
+            target: x86_64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            flags: '--use-napi-cross'
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.napi-rs
+            target/
+          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native
+        run: npm run build -w @atchara/native -- --target ${{ matrix.settings.target }} ${{ matrix.settings.flags }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.settings.target }}
+          path: |
+            packages/native/*.node
+            packages/native/index.js
+            packages/native/index.d.ts
+          if-no-files-found: error
+
+  # Build JS packages once on ubuntu where rollup's platform binaries
+  # install correctly, then share the output with test-binding jobs.
+  build-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build JS packages
+        run: npm run build -w @atchara/core && npm run build -w atchara
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: js-packages
+          path: |
+            packages/core/dist/
+            packages/atchara/dist/
+          if-no-files-found: error
+
+  test-binding:
+    name: Test binding (${{ matrix.settings.target }})
+    needs: [build-native, build-js]
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            architecture: x64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          architecture: ${{ matrix.settings.architecture }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # npm#4828: lockfile generated on one OS omits optional platform
+      # deps for other OSes. Reinstall without the lockfile so the
+      # current platform's optional deps resolve correctly.
+      - name: Fix platform optional dependencies
+        if: runner.os != 'Linux'
+        shell: bash
+        run: rm -rf node_modules package-lock.json && npm install
+
+      - name: Download native artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: native-${{ matrix.settings.target }}
+          path: packages/native
+
+      - name: Download JS artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: js-packages
+          path: packages
+
+      - name: Test
+        run: npm test -w atchara
+
   release:
+    needs: [build-native, test-binding]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       id-token: write
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Install Rust nightly with clippy
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: clippy
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build JS packages
+        run: npm run build -w @atchara/core && npm run build -w atchara
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: packages/native/artifacts
+          merge-multiple: true
+
+      - name: Create platform package dirs
+        run: npx napi create-npm-dirs --cwd packages/native
+
+      - name: Collect artifacts into platform packages
+        run: npm run artifacts -w @atchara/native
 
       - name: Create release PR or publish
+        id: changesets
         uses: changesets/action@v1
         with:
           publish: npm run release
@@ -43,3 +193,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
+
+      # Platform packages must exist on npm before anyone installs the main
+      # @atchara/native package that references them as optionalDependencies.
+      - name: Publish platform packages
+        if: steps.changesets.outputs.published == 'true'
+        working-directory: packages/native
+        run: |
+          for dir in npm/*/; do
+            npm publish "$dir" --access public --provenance
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

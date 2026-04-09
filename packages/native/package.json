@@ -21,20 +21,29 @@
   ],
   "scripts": {
     "clean": "rm -rf *.node index.js index.d.ts profile && cargo clean",
-    "build": "RUSTUP_TOOLCHAIN=nightly napi build --platform --release --strip",
-    "build:debug": "RUSTUP_TOOLCHAIN=nightly napi build --platform",
-    "build:profile": "RUSTUP_TOOLCHAIN=nightly napi build --platform --release",
+    "build": "napi build --platform --release --strip",
+    "build:debug": "napi build --platform",
+    "build:profile": "napi build --platform --release",
     "prepublishOnly": "napi prepublish -t npm",
     "artifacts": "napi artifacts",
-    "test": "RUSTUP_TOOLCHAIN=nightly cargo test --lib",
-    "lint": "RUSTUP_TOOLCHAIN=nightly cargo clippy",
-    "typecheck": "RUSTUP_TOOLCHAIN=nightly cargo check"
+    "test": "cargo test --lib",
+    "lint": "cargo clippy",
+    "typecheck": "cargo check"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.5.1",
     "vitest": "^4.0.4"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jankdc/atchara.git",
+    "directory": "packages/native"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   }
 }
