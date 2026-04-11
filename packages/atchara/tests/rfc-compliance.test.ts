@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { toBytes as b } from '@atchara/core'
+import { toBytes as b } from '@atcharajs/core'
 import { type Parser, initialize, object, number, string, array } from '../src/index'
 import {
   expectAtcharaErrorAsync,

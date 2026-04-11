@@ -1,5 +1,5 @@
 /**
- * @atchara/core - Core types, interfaces, and utilities for Atchara
+ * @atcharajs/core - Core types, interfaces, and utilities for Atchara
  */
 
 import { Schema } from './schema/types'

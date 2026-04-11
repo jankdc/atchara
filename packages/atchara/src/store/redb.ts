@@ -10,8 +10,8 @@ import type {
   SerializedSchema,
   SerializedObjectSchema,
   FlatObjectField,
-} from '@atchara/core'
-import { resolveRef, schemaAtPath } from '@atchara/core'
+} from '@atcharajs/core'
+import { resolveRef, schemaAtPath } from '@atcharajs/core'
 import { encodePath } from '../path'
 
 /** Structural interface for any session that supports redb-style reads */

@@ -1,4 +1,4 @@
-import type { Parser, Schema, SerializedSchema, DeferredValue, LazyContext } from '@atchara/core'
+import type { Parser, Schema, SerializedSchema, DeferredValue, LazyContext } from '@atcharajs/core'
 
 export class OptionalSchema<T extends Parser<Schema>>
   implements

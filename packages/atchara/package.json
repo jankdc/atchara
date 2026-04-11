@@ -40,8 +40,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@atchara/core": "0.1.0",
-    "@atchara/native": "0.1.0"
+    "@atcharajs/core": "0.1.0",
+    "@atcharajs/native": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -55,6 +55,6 @@
     "vitest": "^4.0.4"
   },
   "publishConfig": {
-    "provenance": true
+    "access": "public"
   }
 }

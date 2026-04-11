@@ -1,5 +1,5 @@
 {
-  "name": "@atchara/bench",
+  "name": "@atcharajs/bench",
   "version": "0.1.0",
   "private": true,
   "description": "Benchmarking suite for the Atchara JSON parser",

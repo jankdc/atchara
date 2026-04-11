@@ -1,4 +1,4 @@
-# @atchara/bench
+# @atcharajs/bench
 
 Comprehensive benchmarking suite for the Atchara JSON parser, comparing performance against industry-standard validators like Zod, Valibot, Yup, and Joi.
 

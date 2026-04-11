@@ -1,4 +1,4 @@
-import type { Schema, SerializedSchema, DeferredPrimitive, LazyContext } from '@atchara/core'
+import type { Schema, SerializedSchema, DeferredPrimitive, LazyContext } from '@atcharajs/core'
 
 export class BooleanSchema implements Schema<boolean, void, DeferredPrimitive<boolean>> {
   readonly _output!: boolean

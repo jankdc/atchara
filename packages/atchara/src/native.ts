@@ -12,10 +12,10 @@ import type {
   LargeParseResult,
   InferDeferred,
   DeferredValue,
-} from '@atchara/core'
-import { wrapDeferred } from '@atchara/core'
+} from '@atcharajs/core'
+import { wrapDeferred } from '@atcharajs/core'
 import { MemoryStore } from './store/memory'
-import { Atchara } from '@atchara/native'
+import { Atchara } from '@atcharajs/native'
 import { encodePath } from './path'
 import { ErrorDecoder } from './decoder/error'
 import { RedbStore } from './store/redb'

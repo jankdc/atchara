@@ -1,5 +1,5 @@
 {
-  "name": "@atchara/native",
+  "name": "@atcharajs/native",
   "version": "0.1.0",
   "description": "Native Node.js bindings for Atchara",
   "type": "commonjs",
@@ -43,7 +43,6 @@
     "node": ">=20"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }

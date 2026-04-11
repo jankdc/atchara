@@ -1,5 +1,5 @@
 import { describe, it, expect, expectTypeOf, beforeAll } from 'vitest'
-import { toBytes as b } from '@atchara/core'
+import { toBytes as b } from '@atcharajs/core'
 import {
   initialize,
   record,

@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@atchara/bench"]
+  "ignore": ["@atcharajs/bench"]
 }

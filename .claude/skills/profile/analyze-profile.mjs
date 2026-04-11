@@ -155,7 +155,7 @@ class ProfileAnalyzer {
 
     // Decoding phase (TypeScript decoder in core package)
     if (
-      url.includes('@atchara/core') ||
+      url.includes('@atcharajs/core') ||
       url.includes('core/dist') ||
       name === 'readObject' ||
       name === 'readString' ||

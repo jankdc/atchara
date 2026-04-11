@@ -103,4 +103,4 @@ jobs:
         run: npm ci
 
       - name: Build native
-        run: npm run build -w @atchara/native -- --target ${{ matrix.settings.target }}
+        run: npm run build -w @atcharajs/native -- --target ${{ matrix.settings.target }}

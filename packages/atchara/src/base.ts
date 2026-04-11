@@ -2,7 +2,7 @@
  * Native API implementation - provides tree-shakeable functional API for creating parsers
  */
 
-import type { Parser, Schema } from '@atchara/core'
+import type { Parser, Schema } from '@atcharajs/core'
 
 import { NativeParser } from './native'
 

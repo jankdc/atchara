@@ -1,6 +1,6 @@
 import { describe, it, expect, expectTypeOf, beforeAll } from 'vitest'
 import { initialize, integer, object, array } from '../src/index'
-import { toBytes as b } from '@atchara/core'
+import { toBytes as b } from '@atcharajs/core'
 import {
   expectAtcharaErrorAsync,
   parseWithMode,

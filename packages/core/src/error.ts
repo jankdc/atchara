@@ -155,7 +155,7 @@ export type AtcharaError =
  *
  * @example
  * ```typescript
- * import { toBytes as b } from '@atchara/core'
+ * import { toBytes as b } from '@atcharajs/core'
  *
  * try {
  *   parser.parse(b`{"invalid": }`)

@@ -37,15 +37,15 @@ npm run format:check         # Check formatting without changing
 
 ```
 packages/
-├── core/      @atchara/core    Schema types, parser interface, decoder
-├── native/    @atchara/native  Rust N-API parsing engine
+├── core/      @atcharajs/core    Schema types, parser interface, decoder
+├── native/    @atcharajs/native  Rust N-API parsing engine
 ├── atchara/   atchara          Main public API
-└── bench/     @atchara/bench   Benchmarks and profiling (private)
+└── bench/     @atcharajs/bench   Benchmarks and profiling (private)
 ```
 
 **Notes:**
 
-- Build order: @atchara/core → @atchara/native → atchara
+- Build order: @atcharajs/core → @atcharajs/native → atchara
 - Native build requires Rust and napi-rs
 - Always build before testing
 

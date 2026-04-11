@@ -1,4 +1,4 @@
-import type { Parser, Schema, SerializedSchema, DeferredObject, LazyContext } from '@atchara/core'
+import type { Parser, Schema, SerializedSchema, DeferredObject, LazyContext } from '@atcharajs/core'
 
 type ObjectOutput<T extends Record<string, Parser<Schema>>> = {
   [K in keyof T]: T[K]['schema']['_output']

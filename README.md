@@ -90,7 +90,7 @@ npm run typecheck
 
 ```bash
 npm run build
-npm run bench -w @atchara/bench
+npm run bench -w @atcharajs/bench
 ```
 
 See [packages/bench/README.md](./packages/bench/README.md) for detailed benchmark documentation.

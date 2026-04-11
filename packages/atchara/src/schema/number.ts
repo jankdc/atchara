@@ -6,7 +6,7 @@ import type {
   InferDeferred,
   LargeParseResult,
   LazyContext,
-} from '@atchara/core'
+} from '@atcharajs/core'
 import type { Readable } from 'stream'
 import { NativeParser } from '../native'
 

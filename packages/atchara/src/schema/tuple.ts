@@ -1,4 +1,4 @@
-import type { Parser, Schema, SerializedSchema, DeferredTuple, LazyContext } from '@atchara/core'
+import type { Parser, Schema, SerializedSchema, DeferredTuple, LazyContext } from '@atcharajs/core'
 
 // Type inference: extracts output types from parser tuple
 // Access schema's _output directly through Parser interface

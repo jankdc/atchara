@@ -38,7 +38,7 @@ console.log(`Input: ${inputPath} (${(inputStat.size / 1024 / 1024).toFixed(1)} M
 
 async function profileParseLarge() {
   const { initialize, string, number, boolean, object, array } = await import('atchara')
-  const { Atchara } = await import('@atchara/native')
+  const { Atchara } = await import('@atcharajs/native')
 
   await initialize()
 

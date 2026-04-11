@@ -3,8 +3,8 @@
  * Values are only decoded when accessed, enabling efficient handling of large objects.
  */
 
-import type { ValueStore, FieldMetadata, SerializedSchema } from '@atchara/core'
-import { resolveRef, schemaAtPath } from '@atchara/core'
+import type { ValueStore, FieldMetadata, SerializedSchema } from '@atcharajs/core'
+import { resolveRef, schemaAtPath } from '@atcharajs/core'
 import { BufferDecoder } from '../decoder/buffer'
 import { OffsetIndex } from '../decoder/offset'
 import { encodePath } from '../path'

@@ -3,7 +3,7 @@ import { bench, describe } from 'vitest'
 describe('Parser Type Characteristic Performance', async () => {
   const { initialize, string, number, boolean, literal, object, array, nullable, optional } =
     await import('atchara')
-  const { toBytes: b } = await import('@atchara/core')
+  const { toBytes: b } = await import('@atcharajs/core')
 
   await initialize()
 

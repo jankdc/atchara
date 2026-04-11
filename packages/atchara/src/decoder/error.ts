@@ -13,8 +13,8 @@ import type {
   UnexpectedField,
   UnionNoMatch,
   ValidationError,
-} from '@atchara/core'
-import { createAtcharaError } from '@atchara/core'
+} from '@atcharajs/core'
+import { createAtcharaError } from '@atcharajs/core'
 import {
   ERROR_CODE_INVALID_SCHEMA,
   ERROR_CODE_INVALID_UTF8,
@@ -24,7 +24,7 @@ import {
   ERROR_CODE_UNEXPECTED_FIELD,
   ERROR_CODE_UNION_NO_MATCH,
   ERROR_CODE_VALIDATION_ERROR,
-} from '@atchara/native'
+} from '@atcharajs/native'
 import { ByteReader } from './reader'
 
 /**

@@ -1,4 +1,4 @@
-import type { Schema, SerializedSchema, DeferredPrimitive, LazyContext } from '@atchara/core'
+import type { Schema, SerializedSchema, DeferredPrimitive, LazyContext } from '@atcharajs/core'
 
 export class LiteralSchema<T extends string | number | boolean | null>
   implements Schema<T, T, DeferredPrimitive<T>>

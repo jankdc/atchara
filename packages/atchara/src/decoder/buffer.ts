@@ -3,8 +3,8 @@
  * Decodes data based on known schema structure without type tags or field names.
  */
 
-import type { SerializedSchema, SerializedObjectSchema } from '@atchara/core'
-import { ABSENT_FIELD_MARKER, NULL_FLAG } from '@atchara/native'
+import type { SerializedSchema, SerializedObjectSchema } from '@atcharajs/core'
+import { ABSENT_FIELD_MARKER, NULL_FLAG } from '@atcharajs/native'
 import { ByteReader } from './reader'
 import { fnv1a64 } from './hash'
 

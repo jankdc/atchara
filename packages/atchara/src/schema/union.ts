@@ -5,9 +5,9 @@ import type {
   SerializedSchema,
   DeferredUnion,
   LazyContext,
-} from '@atchara/core'
+} from '@atcharajs/core'
 
-import { createAtcharaError } from '@atchara/core'
+import { createAtcharaError } from '@atcharajs/core'
 import { OptionalSchema } from './optional'
 
 // Type inference: extracts union of output types from parser array

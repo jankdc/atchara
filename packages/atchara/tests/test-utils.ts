@@ -9,7 +9,7 @@
 import { Readable } from 'node:stream'
 import { Buffer } from 'node:buffer'
 import process from 'node:process'
-import type { Parser, Schema, InferDeferred, Unwrap, DeferredValue } from '@atchara/core'
+import type { Parser, Schema, InferDeferred, Unwrap, DeferredValue } from '@atcharajs/core'
 
 export type ParseMode = 'sync' | 'streaming'
 

@@ -3,4 +3,4 @@
  * Re-exported from native module for record key lookup
  */
 
-export { fnv1A64 as fnv1a64 } from '@atchara/native'
+export { fnv1A64 as fnv1a64 } from '@atcharajs/native'

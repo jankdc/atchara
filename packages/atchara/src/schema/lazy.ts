@@ -5,7 +5,7 @@ import type {
   Parser,
   InferDeferred,
   LargeParseResult,
-} from '@atchara/core'
+} from '@atcharajs/core'
 import type { Readable } from 'stream'
 import { NativeParser } from '../native'
 

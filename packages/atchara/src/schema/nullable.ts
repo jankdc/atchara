@@ -1,4 +1,10 @@
-import type { Parser, Schema, SerializedSchema, DeferredNullable, LazyContext } from '@atchara/core'
+import type {
+  Parser,
+  Schema,
+  SerializedSchema,
+  DeferredNullable,
+  LazyContext,
+} from '@atcharajs/core'
 
 export class NullableSchema<T extends Parser<Schema>>
   implements

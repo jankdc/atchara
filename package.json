@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "clean": "npm run clean --workspaces --if-present",
-    "build": "npm run build -w @atchara/core && npm run build -w @atchara/native && npm run build -w atchara",
+    "build": "npm run build -w @atcharajs/core && npm run build -w @atcharajs/native && npm run build -w atchara",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -40,11 +40,11 @@
       "prettier --write"
     ],
     "packages/core/**/*.{js,ts}": [
-      "npm run lint -w @atchara/core --",
+      "npm run lint -w @atcharajs/core --",
       "prettier --write"
     ],
     "packages/native/**/*.rs": [
-      "sh -c 'npm run lint -w @atchara/native'",
+      "sh -c 'npm run lint -w @atcharajs/native'",
       "rustfmt --edition 2024"
     ],
     "packages/bench/**/*.{js,ts}": [

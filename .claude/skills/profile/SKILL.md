@@ -12,17 +12,17 @@ Analyze CPU profiles to understand time distribution between native parsing, Typ
 ### 1. Build with Profiling Symbols
 
 ```bash
-npm run build:profile -w @atchara/native
-npm run build -w atchara && npm run build -w @atchara/core
+npm run build:profile -w @atcharajs/native
+npm run build -w atchara && npm run build -w @atcharajs/core
 ```
 
 ### 2. Collect CPU Profile
 
 ```bash
-SCENARIO=throughput-baseline-simple npm run profile:cpu -w @atchara/bench
+SCENARIO=throughput-baseline-simple npm run profile:cpu -w @atcharajs/bench
 
 # With custom iterations
-PROFILE_ITERATIONS=100000 SCENARIO=throughput-baseline-simple npm run profile:cpu -w @atchara/bench
+PROFILE_ITERATIONS=100000 SCENARIO=throughput-baseline-simple npm run profile:cpu -w @atcharajs/bench
 ```
 
 Generates two profiles:
@@ -68,10 +68,10 @@ Located in `packages/bench/scenarios/`:
 
 ```bash
 # Build
-npm run build:profile -w @atchara/native
+npm run build:profile -w @atcharajs/native
 
 # Profile
-SCENARIO=<name> npm run profile:cpu -w @atchara/bench
+SCENARIO=<name> npm run profile:cpu -w @atcharajs/bench
 
 # Analyze
 node .claude/skills/profile/analyze-profile.mjs <profile.cpuprofile>

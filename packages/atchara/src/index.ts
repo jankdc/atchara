@@ -24,7 +24,7 @@ export type {
   InferDeferred,
   Unwrap,
   LargeParseResult,
-} from '@atchara/core'
+} from '@atcharajs/core'
 
 export {
   toBytes,
@@ -37,7 +37,7 @@ export {
   DeferredTuple,
   DeferredUnion,
   wrapDeferred,
-} from '@atchara/core'
+} from '@atcharajs/core'
 
 export {
   initialize,
