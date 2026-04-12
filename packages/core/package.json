@@ -1,6 +1,6 @@
 {
   "name": "@atcharajs/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Core types, interfaces, and utilities for Atchara",
   "type": "module",
   "exports": {
