@@ -1,6 +1,6 @@
 {
   "name": "atchara",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A fast, schema-aware JSON parser with static type inference",
   "keywords": [
     "JSON",
@@ -40,8 +40,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@atcharajs/core": "0.1.1",
-    "@atcharajs/native": "0.1.1"
+    "@atcharajs/core": "0.1.2",
+    "@atcharajs/native": "0.1.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
