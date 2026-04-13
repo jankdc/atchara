@@ -1,9 +1,8 @@
 - Project: Atchara
-- Schema-aware JSON parser, built in TypeScript + Rust N-API
-- Zod-like API, native Rust parser under the hood
+- Strongly-typed, Schema-aware JSON parser, built in TypeScript + NAPI-RS
+- changeset release workflow
 - When understanding the codebase, look into @docs/ARCHITECTURE.md
 - When making code changes, use the "develop" skill
-- Don't write ASCII art when expressing diagrams as it's hard to edit for humans. Use mermaid diagrams
 - Prompt for technical decisions from user when choices are unsure
 - Run `npm run build` command before running tests
 - Write comments that explain **why**, not **what**. Remove comments that just restate method names or obvious code logic.
