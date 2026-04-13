@@ -1,8 +1,4 @@
 //! Whitespace skipping — unified SIMD-accelerated implementation for both contexts.
-//!
-//! Uses `#[convert_to_sync(StreamingContext => DirectContext<'_>)]` to generate sync and gen variants from a single async
-//! implementation. Both paths get SIMD acceleration; the gen path yields at chunk
-//! boundaries via `ensure_data`.
 
 use std::simd::{cmp::SimdPartialEq, u8x16};
 
