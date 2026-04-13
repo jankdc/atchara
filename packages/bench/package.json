@@ -1,6 +1,6 @@
 {
   "name": "@atcharajs/bench",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Benchmarking suite for the Atchara JSON parser",
   "type": "module",
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.6",
-    "atchara": "0.1.2",
+    "atchara": "0.1.3",
     "hono": "^4.10.6",
     "joi": "^17.13.3",
     "start-server-and-test": "^2.1.3",

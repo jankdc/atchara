@@ -193,15 +193,3 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # Enable provenance once the repo is public (requires public repo)
           # NPM_CONFIG_PROVENANCE: 'true'
-
-      # Platform packages must exist on npm before anyone installs the main
-      # @atcharajs/native package that references them as optionalDependencies.
-      - name: Publish platform packages
-        if: steps.changesets.outputs.published == 'true'
-        working-directory: packages/native
-        run: |
-          for dir in npm/*/; do
-            npm publish "$dir" --access public
-          done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

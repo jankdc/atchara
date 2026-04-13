@@ -1,6 +1,6 @@
 {
   "name": "@atcharajs/native",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Native Node.js bindings for Atchara",
   "type": "commonjs",
   "main": "index.js",
