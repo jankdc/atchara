@@ -14,7 +14,7 @@ import type {
 import { resolveRef, schemaAtPath } from '@atcharajs/core'
 import { encodePath } from '../path'
 
-/** Structural interface for any session that supports redb-style reads */
+/** Structural interface for any client that supports redb-style reads */
 export interface RedbReadable {
   get(key: string): Buffer | null
   keysWithPrefix(prefix: string): string[]
@@ -136,12 +136,11 @@ function decodePackedBlob(blob: Uint8Array, objectFields: FlatObjectField[]): Ma
 
 export class RedbStore implements ValueStore {
   private schemaCache = new Map<string, SerializedSchema>()
-  private closed = false
 
   private defs: SerializedSchema[]
 
   constructor(
-    private session: RedbReadable,
+    private client: RedbReadable,
     private schema: SerializedSchema,
     private indexMap: Map<string, number>,
     defs: SerializedSchema[] = []
@@ -153,19 +152,8 @@ export class RedbStore implements ValueStore {
     return this.defs
   }
 
-  get isClosed(): boolean {
-    return this.closed
-  }
-
-  close(): void {
-    if (!this.closed) {
-      this.session.close()
-      this.closed = true
-    }
-  }
-
   private ensureOpen(): void {
-    if (this.closed) {
+    if (this.client.isClosed) {
       throw new Error('RedbStore is closed')
     }
   }
@@ -186,34 +174,34 @@ export class RedbStore implements ValueStore {
       case 'object': {
         // Packed objects store a blob at d:{path}; fallback to m:{path}:len
         const dataKey = this.pathToKey(path)
-        if (this.session.get(dataKey) !== null) return true
+        if (this.client.get(dataKey) !== null) return true
         const objMetaKey = this.pathToMetaKey(path, 'len')
-        return this.session.get(objMetaKey) !== null
+        return this.client.get(objMetaKey) !== null
       }
       case 'array':
       case 'tuple':
       case 'record': {
         // These types store metadata with length
         const metaKey = this.pathToMetaKey(path, 'len')
-        return this.session.get(metaKey) !== null
+        return this.client.get(metaKey) !== null
       }
 
       case 'union': {
         // Unions store variant index as metadata
         const metaKey = this.pathToMetaKey(path, 'var')
-        return this.session.get(metaKey) !== null
+        return this.client.get(metaKey) !== null
       }
 
       case 'nullable': {
         // Nullable stores flag as metadata
         const metaKey = this.pathToMetaKey(path, 'nul')
-        return this.session.get(metaKey) !== null
+        return this.client.get(metaKey) !== null
       }
 
       default: {
         // Primitives store directly at d:{path}
         const dataKey = this.pathToKey(path)
-        return this.session.get(dataKey) !== null
+        return this.client.get(dataKey) !== null
       }
     }
   }
@@ -388,21 +376,21 @@ export class RedbStore implements ValueStore {
 
     switch (schema.kind) {
       case 'string': {
-        const bytes = this.session.get(key)
+        const bytes = this.client.get(key)
         if (!bytes) return undefined
         return new TextDecoder().decode(bytes)
       }
 
       case 'number':
       case 'integer': {
-        const bytes = this.session.get(key)
+        const bytes = this.client.get(key)
         if (!bytes) return undefined
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
         return view.getFloat64(0)
       }
 
       case 'boolean': {
-        const bytes = this.session.get(key)
+        const bytes = this.client.get(key)
         if (!bytes) return undefined
         return bytes[0] === 1
       }
@@ -411,7 +399,7 @@ export class RedbStore implements ValueStore {
         if (schema.value === null) {
           return null
         }
-        const bytes = this.session.get(key)
+        const bytes = this.client.get(key)
         if (!bytes) return schema.value
         if (typeof schema.value === 'string') {
           return new TextDecoder().decode(bytes)
@@ -429,7 +417,7 @@ export class RedbStore implements ValueStore {
       case 'nullable': {
         // Null flag stored as metadata to avoid collision with inner value
         const metaKey = this.pathToMetaKey(path, 'nul')
-        const bytes = this.session.get(metaKey)
+        const bytes = this.client.get(metaKey)
         if (!bytes) return undefined
         const isNull = bytes[0] === 0x01
         if (isNull) return null
@@ -443,7 +431,7 @@ export class RedbStore implements ValueStore {
       case 'union': {
         // Variant index is stored as metadata to avoid key collision with value
         const metaKey = this.pathToMetaKey(path, 'var')
-        const bytes = this.session.get(metaKey)
+        const bytes = this.client.get(metaKey)
         if (!bytes) return undefined
         const variantIndex = bytes[0]
         if (variantIndex === undefined || variantIndex >= schema.variants.length) {
@@ -461,7 +449,7 @@ export class RedbStore implements ValueStore {
 
         // Try reading packed blob for this object
         const blobKey = this.pathToKey(path)
-        const blob = this.session.get(blobKey)
+        const blob = this.client.get(blobKey)
         let packedData: Map<number, unknown> | null = null
         if (blob) {
           packedData = decodePackedBlob(new Uint8Array(blob), schema.objectFields)
@@ -550,7 +538,7 @@ export class RedbStore implements ValueStore {
       if (isPackable(field.schema, this.defs)) {
         // Check the parent's packed blob
         const blobKey = this.pathToKey(parentPath)
-        const blob = this.session.get(blobKey)
+        const blob = this.client.get(blobKey)
         if (blob) {
           const packedData = decodePackedBlob(new Uint8Array(blob), parentSchema.objectFields)
           return packedData.has(field.index) && packedData.get(field.index) !== undefined
@@ -573,7 +561,7 @@ export class RedbStore implements ValueStore {
       // Record keys use k: prefix in storage
       const recordKey =
         parentPath.length === 0 ? `d:k:${key}` : `d:${parentPath.join(':')}:k:${key}`
-      return this.session.get(recordKey) !== null
+      return this.client.get(recordKey) !== null
     }
 
     return false
@@ -593,7 +581,7 @@ export class RedbStore implements ValueStore {
   getArrayLength(path: string[]): number {
     this.ensureOpen()
     const metaKey = this.pathToMetaKey(path, 'len')
-    const bytes = this.session.get(metaKey)
+    const bytes = this.client.get(metaKey)
     if (!bytes) return 0
 
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -612,7 +600,7 @@ export class RedbStore implements ValueStore {
     const keys = new Set<string>()
 
     // Get keys from data entries
-    for (const k of this.session.keysWithPrefix(dataPrefix)) {
+    for (const k of this.client.keysWithPrefix(dataPrefix)) {
       const keyPart = k.slice(dataPrefix.length)
       const colonIdx = keyPart.indexOf(':')
       const immediateKey = colonIdx === -1 ? keyPart : keyPart.slice(0, colonIdx)
@@ -621,7 +609,7 @@ export class RedbStore implements ValueStore {
     }
 
     // Get keys from metadata entries (for nullable null values)
-    for (const k of this.session.keysWithPrefix(metaPrefix)) {
+    for (const k of this.client.keysWithPrefix(metaPrefix)) {
       const keyPart = k.slice(metaPrefix.length)
       const colonIdx = keyPart.indexOf(':')
       const immediateKey = colonIdx === -1 ? keyPart : keyPart.slice(0, colonIdx)
@@ -653,7 +641,7 @@ export class RedbStore implements ValueStore {
     field: FlatObjectField
   ): unknown {
     const blobKey = this.pathToKey(parentPath)
-    const blob = this.session.get(blobKey)
+    const blob = this.client.get(blobKey)
     if (!blob) return undefined
 
     const packedData = decodePackedBlob(new Uint8Array(blob), parentSchema.objectFields)
