@@ -32,3 +32,17 @@ export interface LargeParseResult<T extends Schema> {
   close(): void
   readonly isClosed: boolean
 }
+
+/**
+ * Result from parseEach with explicit resource management.
+ * Implements AsyncIterable so it works with `for await...of`.
+ * Call close() when done accessing yielded deferreds, or use `await using` for automatic cleanup.
+ *
+ * @typeParam E - The deferred type of each yielded element
+ */
+export interface EachParseResult<E> {
+  [Symbol.asyncIterator](): AsyncIterableIterator<E>
+  close(): void
+  readonly isClosed: boolean
+  [Symbol.asyncDispose](): Promise<void>
+}

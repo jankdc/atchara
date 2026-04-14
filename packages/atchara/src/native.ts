@@ -10,6 +10,7 @@ import type {
   SerializedSchema,
   SerializedArraySchema,
   LargeParseResult,
+  EachParseResult,
   InferDeferred,
   DeferredValue,
 } from '@atcharajs/core'
@@ -66,14 +67,14 @@ export class NativeParser<T extends Schema> implements Parser<T> {
   /**
    * Parse a JSON array from a stream, yielding each element as it is parsed.
    * Only valid when the root schema is an array.
-   * Yielded deferreds become invalid after the iterator completes.
+   * Call close() when done accessing yielded deferreds, or use `await using` for automatic cleanup.
    */
-  async *parseEach(stream: Readable): AsyncIterableIterator<DeferredValue<unknown>> {
+  parseEach(stream: Readable): EachParseResult<DeferredValue<unknown>> {
     const [session, redbClient] = this.native.createIteratingSession()
     const arraySchema = this.root as SerializedArraySchema
     const store = new RedbStore(redbClient, this.root, this.indexMap, this.defs)
 
-    try {
+    async function* iterate(): AsyncIterableIterator<DeferredValue<unknown>> {
       let complete = false
 
       for await (const chunk of stream) {
@@ -108,10 +109,27 @@ export class NativeParser<T extends Schema> implements Parser<T> {
           throw errorDecoder.decode()
         }
       }
-    } finally {
-      session.abort()
-      store.close()
     }
+
+    const result: EachParseResult<DeferredValue<unknown>> = {
+      close() {
+        session.abort()
+        store.close()
+      },
+      get isClosed() {
+        return store.isClosed
+      },
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async [Symbol.asyncDispose]() {
+        session.abort()
+        store.close()
+      },
+      [Symbol.asyncIterator]() {
+        return iterate()
+      },
+    }
+
+    return result
   }
 
   /**
