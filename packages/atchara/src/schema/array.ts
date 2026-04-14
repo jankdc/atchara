@@ -5,6 +5,7 @@ import type {
   DeferredArray,
   InferDeferred,
   LargeParseResult,
+  EachParseResult,
   LazyContext,
 } from '@atcharajs/core'
 import type { Readable } from 'stream'
@@ -64,10 +65,10 @@ export class ArraySchema<T extends Parser<Schema>>
 
   /**
    * Parse a JSON array from a stream, yielding each element's deferred wrapper as it is parsed.
-   * Yielded deferreds become invalid after the iterator completes.
+   * Call close() when done accessing yielded deferreds, or use `await using` for automatic cleanup.
    */
-  parseEach(stream: Readable): AsyncIterableIterator<T['schema']['_deferred']> {
-    return this.getParser().parseEach(stream) as AsyncIterableIterator<T['schema']['_deferred']>
+  parseEach(stream: Readable): EachParseResult<T['schema']['_deferred']> {
+    return this.getParser().parseEach(stream) as EachParseResult<T['schema']['_deferred']>
   }
 
   private getParser(): NativeParser<ArraySchema<T>> {

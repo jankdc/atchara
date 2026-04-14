@@ -596,85 +596,97 @@ describe('Array Schema', () => {
       (_label, chunkSize) => {
         it('should iterate and collect all elements', async () => {
           const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))
           const values: number[] = []
-          for await (const item of parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))) {
+          for await (const item of reader) {
             values.push(item.toValue())
           }
+          reader.close()
           expect(values).toEqual([1, 2, 3])
         })
 
         it('should handle empty arrays', async () => {
           const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[]`, chunkSize))
           const values: number[] = []
-          for await (const item of parser.parseEach(createChunkedStream(b`[]`, chunkSize))) {
+          for await (const item of reader) {
             values.push(item.toValue())
           }
+          reader.close()
           expect(values).toEqual([])
         })
 
         it('should support deferred field access on yielded object elements', async () => {
           const parser = array(object({ id: number(), name: string() }))
-          const names: string[] = []
-          for await (const item of parser.parseEach(
+          const reader = parser.parseEach(
             createChunkedStream(b`[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]`, chunkSize)
-          )) {
+          )
+          const names: string[] = []
+          for await (const item of reader) {
             names.push(item.get('name').toValue())
           }
+          reader.close()
           expect(names).toEqual(['Alice', 'Bob'])
         })
 
         it('should handle nested structures', async () => {
           const parser = array(object({ tags: array(string()) }))
-          const values: Array<{ tags: string[] }> = []
-          for await (const item of parser.parseEach(
+          const reader = parser.parseEach(
             createChunkedStream(b`[{"tags":["a","b"]},{"tags":["c"]}]`, chunkSize)
-          )) {
+          )
+          const values: Array<{ tags: string[] }> = []
+          for await (const item of reader) {
             values.push(item.toValue())
           }
+          reader.close()
           expect(values).toEqual([{ tags: ['a', 'b'] }, { tags: ['c'] }])
         })
 
         it('should yield valid elements before throwing on schema error', async () => {
           const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[1,2,"bad",4]`, chunkSize))
           let error: unknown
           const values: number[] = []
           try {
-            for await (const item of parser.parseEach(
-              createChunkedStream(b`[1,2,"bad",4]`, chunkSize)
-            )) {
+            for await (const item of reader) {
               values.push(item.toValue())
             }
           } catch (e) {
             error = e
           }
+          reader.close()
           expect(values).toEqual([1, 2])
           expect(isAtcharaError(error)).toBe(true)
         })
 
         it('should throw on malformed JSON', async () => {
           const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[1,2,`, chunkSize))
           let error: unknown
           try {
-            for await (const _item of parser.parseEach(createChunkedStream(b`[1,2,`, chunkSize))) {
+            for await (const _item of reader) {
               // consume
             }
           } catch (e) {
             error = e
           }
+          reader.close()
           expect(isAtcharaError(error)).toBe(true)
         })
 
         it('should enforce max constraint eagerly', async () => {
           const parser = array(number()).max(2)
+          const reader = parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))
           let error: unknown
           const values: number[] = []
           try {
-            for await (const item of parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))) {
+            for await (const item of reader) {
               values.push(item.toValue())
             }
           } catch (e) {
             error = e
           }
+          reader.close()
           expect(isAtcharaError(error)).toBe(true)
           if (isAtcharaError(error) && error.code === 'VALIDATION_ERROR') {
             expect(error.details.expected).toContain('at most 2')
@@ -684,14 +696,52 @@ describe('Array Schema', () => {
         it('should support break for early termination', async () => {
           const parser = array(number())
           const json = JSON.stringify(Array.from({ length: 100 }, (_, i) => i))
-          const values: number[] = []
-          for await (const item of parser.parseEach(
+          const reader = parser.parseEach(
             createChunkedStream(new TextEncoder().encode(json), chunkSize)
-          )) {
+          )
+          const values: number[] = []
+          for await (const item of reader) {
             values.push(item.toValue())
             if (values.length >= 3) break
           }
+          reader.close()
           expect(values).toEqual([0, 1, 2])
+        })
+
+        it('should allow deferred access after iteration completes', async () => {
+          const parser = array(object({ id: number(), name: string() }))
+          const reader = parser.parseEach(
+            createChunkedStream(b`[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]`, chunkSize)
+          )
+          const collected = []
+          for await (const item of reader) {
+            collected.push(item)
+          }
+          // Access deferreds after iteration — the key behavior this redesign enables
+          expect(collected[0]!.get('name').toValue()).toBe('Alice')
+          expect(collected[1]!.get('id').toValue()).toBe(2)
+          expect(collected[1]!.toValue()).toEqual({ id: 2, name: 'Bob' })
+          reader.close()
+        })
+
+        it('should report isClosed state', async () => {
+          const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[1]`, chunkSize))
+          expect(reader.isClosed).toBe(false)
+          for await (const _item of reader) {
+            // consume
+          }
+          expect(reader.isClosed).toBe(false)
+          reader.close()
+          expect(reader.isClosed).toBe(true)
+        })
+
+        it('should support Symbol.asyncDispose for await using', async () => {
+          const parser = array(number())
+          const reader = parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))
+          expect(Symbol.asyncDispose in reader).toBe(true)
+          await reader[Symbol.asyncDispose]()
+          expect(reader.isClosed).toBe(true)
         })
       }
     )

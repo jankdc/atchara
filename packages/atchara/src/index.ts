@@ -24,6 +24,7 @@ export type {
   InferDeferred,
   Unwrap,
   LargeParseResult,
+  EachParseResult,
 } from '@atcharajs/core'
 
 export {

@@ -33,7 +33,7 @@ export type InferInput<T extends Schema | Parser<Schema>> = ExtractSchema<T>['_i
 export type InferValue<T extends Schema | Parser<Schema>> = ExtractSchema<T>['_output']
 
 // Parser interface
-export type { Parser, LargeParseResult } from './parser/types'
+export type { Parser, LargeParseResult, EachParseResult } from './parser/types'
 
 // Text utilities
 export { toBytes } from './text'
