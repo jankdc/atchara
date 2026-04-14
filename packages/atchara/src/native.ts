@@ -114,15 +114,15 @@ export class NativeParser<T extends Schema> implements Parser<T> {
     const result: EachParseResult<DeferredValue<unknown>> = {
       close() {
         session.abort()
-        store.close()
+        redbClient.close()
       },
       get isClosed() {
-        return store.isClosed
+        return redbClient.isClosed
       },
       // eslint-disable-next-line @typescript-eslint/require-await
       async [Symbol.asyncDispose]() {
         session.abort()
-        store.close()
+        redbClient.close()
       },
       [Symbol.asyncIterator]() {
         return iterate()
@@ -167,9 +167,9 @@ export class NativeParser<T extends Schema> implements Parser<T> {
 
       return {
         data: deferred,
-        close: () => store.close(),
+        close: () => redbClient.close(),
         get isClosed() {
-          return store.isClosed
+          return redbClient.isClosed
         },
       }
     } catch (error) {

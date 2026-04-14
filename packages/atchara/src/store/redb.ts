@@ -136,7 +136,6 @@ function decodePackedBlob(blob: Uint8Array, objectFields: FlatObjectField[]): Ma
 
 export class RedbStore implements ValueStore {
   private schemaCache = new Map<string, SerializedSchema>()
-  private closed = false
 
   private defs: SerializedSchema[]
 
@@ -153,19 +152,8 @@ export class RedbStore implements ValueStore {
     return this.defs
   }
 
-  get isClosed(): boolean {
-    return this.closed
-  }
-
-  close(): void {
-    if (!this.closed) {
-      this.client.close()
-      this.closed = true
-    }
-  }
-
   private ensureOpen(): void {
-    if (this.closed) {
+    if (this.client.isClosed) {
       throw new Error('RedbStore is closed')
     }
   }
