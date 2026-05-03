@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.6",
-    "atchara": "0.1.3",
+    "atchara": "0.2.0",
     "hono": "^4.10.6",
     "joi": "^17.13.3",
     "start-server-and-test": "^2.1.3",
