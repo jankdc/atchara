@@ -149,6 +149,7 @@ jobs:
   release:
     needs: [build-native, test-binding]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       id-token: write
       contents: write
