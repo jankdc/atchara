@@ -18,7 +18,7 @@ export class DeferredPrimitive<T> implements DeferredValue<T> {
     private path: string[]
   ) {}
 
-  toValue(): T {
-    return this.store.get(this.path) as T
+  async toValue(): Promise<T> {
+    return (await this.store.get(this.path)) as T
   }
 }

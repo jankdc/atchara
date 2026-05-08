@@ -204,6 +204,14 @@ describe('Number Schema', () => {
 
       it('should handle very large numbers (overflow)', async () => {
         const numberParser = number()
+        if (options.mode === 'streaming') {
+          // The kahon writer rejects NaN/±Infinity (per kahon's JSON-only spec),
+          // so streaming mode surfaces a write error instead of materialising
+          // the overflow as Infinity. Sync mode (in-memory binary) accepts it.
+          await expect(parseWithMode(numberParser, b`1e400`, options)).rejects.toThrow()
+          await expect(parseWithMode(numberParser, b`-1e400`, options)).rejects.toThrow()
+          return
+        }
         expect(await parseWithMode(numberParser, b`1e400`, options)).toBe(Infinity)
         expect(await parseWithMode(numberParser, b`-1e400`, options)).toBe(-Infinity)
       })
@@ -612,16 +620,16 @@ describe('Number Schema', () => {
 
   // Performance - sync only
   describe('Performance', () => {
-    it('should handle large numbers efficiently', () => {
+    it('should handle large numbers efficiently', async () => {
       const numberParser = number()
       const largeNumber = '123456789012345'
-      expect(numberParser.parse(b`${largeNumber}`).toValue()).toBe(123456789012345)
+      expect(await numberParser.parse(b`${largeNumber}`).toValue()).toBe(123456789012345)
     })
 
-    it('should handle scientific notation efficiently', () => {
+    it('should handle scientific notation efficiently', async () => {
       const numberParser = number()
-      expect(numberParser.parse(b`1.23e100`).toValue()).toBe(1.23e100)
-      expect(numberParser.parse(b`1.23e-100`).toValue()).toBe(1.23e-100)
+      expect(await numberParser.parse(b`1.23e100`).toValue()).toBe(1.23e100)
+      expect(await numberParser.parse(b`1.23e-100`).toValue()).toBe(1.23e-100)
     })
   })
 })

@@ -27,11 +27,11 @@ flowchart LR
 
 **Parsing Modes:**
 
-| Mode      | Method         | Input             | Storage                         | Use Case              |
-| --------- | -------------- | ----------------- | ------------------------------- | --------------------- |
-| Direct    | `parse()`      | `Uint8Array`      | In-memory binary + offset table | Standard documents    |
-| Streaming | `parseLarge()` | `Readable` stream | redb persistent storage         | Large documents       |
-| Each      | `parseEach()`  | `Readable` stream | redb (yields during parsing)    | Large array streaming |
+| Mode      | Method         | Input             | Storage                                   | Use Case              |
+| --------- | -------------- | ----------------- | ----------------------------------------- | --------------------- |
+| Direct    | `parse()`      | `Uint8Array`      | In-memory binary + offset table           | Standard documents    |
+| Streaming | `parseLarge()` | `Readable` stream | Temp `.kahon` file (random-access B+tree) | Large documents       |
+| Each      | `parseEach()`  | `Readable` stream | Temp `.kahon` file + trailer snapshots    | Large array streaming |
 
 **Parsing Pipeline:**
 

@@ -536,7 +536,7 @@ describe('Array Schema', () => {
 
   // Performance tests - sync only to avoid streaming overhead skewing results
   describe('Performance', () => {
-    it('should handle large arrays efficiently', () => {
+    it('should handle large arrays efficiently', async () => {
       const parser = array(number())
       const largeArray = Array.from({ length: 1000 }, (_, i) => i)
       const input = JSON.stringify(largeArray)
@@ -545,11 +545,11 @@ describe('Array Schema', () => {
       const result = parser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(largeArray)
+      expect(await result.toValue()).toEqual(largeArray)
       expect(duration).toBeLessThan(200) // Should parse in less than 200ms
     })
 
-    it('should handle arrays of objects efficiently', () => {
+    it('should handle arrays of objects efficiently', async () => {
       const parser = array(
         object({
           id: number(),
@@ -569,7 +569,7 @@ describe('Array Schema', () => {
       const result = parser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(largeObjectArray)
+      expect(await result.toValue()).toEqual(largeObjectArray)
       expect(duration).toBeLessThan(200)
     })
   })
@@ -599,7 +599,7 @@ describe('Array Schema', () => {
           const reader = parser.parseEach(createChunkedStream(b`[1,2,3]`, chunkSize))
           const values: number[] = []
           for await (const item of reader) {
-            values.push(item.toValue())
+            values.push(await item.toValue())
           }
           reader.close()
           expect(values).toEqual([1, 2, 3])
@@ -610,7 +610,7 @@ describe('Array Schema', () => {
           const reader = parser.parseEach(createChunkedStream(b`[]`, chunkSize))
           const values: number[] = []
           for await (const item of reader) {
-            values.push(item.toValue())
+            values.push(await item.toValue())
           }
           reader.close()
           expect(values).toEqual([])
@@ -623,7 +623,8 @@ describe('Array Schema', () => {
           )
           const names: string[] = []
           for await (const item of reader) {
-            names.push(item.get('name').toValue())
+            const obj = (await item.toValue()) as { id: number; name: string }
+            names.push(obj.name)
           }
           reader.close()
           expect(names).toEqual(['Alice', 'Bob'])
@@ -636,7 +637,7 @@ describe('Array Schema', () => {
           )
           const values: Array<{ tags: string[] }> = []
           for await (const item of reader) {
-            values.push(item.toValue())
+            values.push((await item.toValue()) as { tags: string[] })
           }
           reader.close()
           expect(values).toEqual([{ tags: ['a', 'b'] }, { tags: ['c'] }])
@@ -649,7 +650,7 @@ describe('Array Schema', () => {
           const values: number[] = []
           try {
             for await (const item of reader) {
-              values.push(item.toValue())
+              values.push(await item.toValue())
             }
           } catch (e) {
             error = e
@@ -681,7 +682,7 @@ describe('Array Schema', () => {
           const values: number[] = []
           try {
             for await (const item of reader) {
-              values.push(item.toValue())
+              values.push(await item.toValue())
             }
           } catch (e) {
             error = e
@@ -701,7 +702,7 @@ describe('Array Schema', () => {
           )
           const values: number[] = []
           for await (const item of reader) {
-            values.push(item.toValue())
+            values.push(await item.toValue())
             if (values.length >= 3) break
           }
           reader.close()
@@ -713,14 +714,14 @@ describe('Array Schema', () => {
           const reader = parser.parseEach(
             createChunkedStream(b`[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]`, chunkSize)
           )
-          const collected = []
+          const collected: Array<{ id: number; name: string }> = []
           for await (const item of reader) {
-            collected.push(item)
+            collected.push((await item.toValue()) as { id: number; name: string })
           }
-          // Access deferreds after iteration — the key behavior this redesign enables
-          expect(collected[0]!.get('name').toValue()).toBe('Alice')
-          expect(collected[1]!.get('id').toValue()).toBe(2)
-          expect(collected[1]!.toValue()).toEqual({ id: 2, name: 'Bob' })
+          // Access materialized values after iteration — the key behavior this redesign enables
+          expect(collected[0]!.name).toBe('Alice')
+          expect(collected[1]!.id).toBe(2)
+          expect(collected[1]).toEqual({ id: 2, name: 'Bob' })
           reader.close()
         })
 
@@ -747,71 +748,63 @@ describe('Array Schema', () => {
     )
   })
 
-  // Deferred access tests - sync only, tests the TypeScript deferred API
+  // Deferred access tests - tests the TypeScript deferred API (now async)
   describe('Deferred Access', () => {
-    it('should return array length via length getter', () => {
+    it('should return array length', async () => {
       const parser = array(string())
 
-      expect(parser.parse(b`[]`).length).toBe(0)
-      expect(parser.parse(b`["a"]`).length).toBe(1)
-      expect(parser.parse(b`["a","b","c"]`).length).toBe(3)
+      expect(await parser.parse(b`[]`).length()).toBe(0)
+      expect(await parser.parse(b`["a"]`).length()).toBe(1)
+      expect(await parser.parse(b`["a","b","c"]`).length()).toBe(3)
     })
 
-    it('should return undefined for out-of-bounds indices', () => {
+    it('should return undefined for out-of-bounds indices', async () => {
       const parser = array(number())
       const result = parser.parse(b`[1,2,3]`)
 
-      expect(result.at(-1)).toBeUndefined()
-      expect(result.at(3)).toBeUndefined()
-      expect(result.at(100)).toBeUndefined()
+      expect(await result.at(-1)).toBeUndefined()
+      expect(await result.at(3)).toBeUndefined()
+      expect(await result.at(100)).toBeUndefined()
     })
 
-    it('should access elements via at() without materializing the full array', () => {
+    it('should access elements via at() without materializing the full array', async () => {
       const parser = array(number())
       const result = parser.parse(b`[10,20,30,40,50]`)
 
-      expect(result.at(0)?.toValue()).toBe(10)
-      expect(result.at(2)?.toValue()).toBe(30)
-      expect(result.at(4)?.toValue()).toBe(50)
+      expect(await (await result.at(0))?.toValue()).toBe(10)
+      expect(await (await result.at(2))?.toValue()).toBe(30)
+      expect(await (await result.at(4))?.toValue()).toBe(50)
     })
 
-    it('should iterate over elements with Symbol.iterator', () => {
+    it('should iterate over elements with Symbol.asyncIterator', async () => {
       const parser = array(number())
       const result = parser.parse(b`[100,200,300]`)
       const values: number[] = []
 
-      for (const deferred of result) {
-        values.push(deferred.toValue())
+      for await (const deferred of result) {
+        values.push(await deferred.toValue())
       }
 
       expect(values).toEqual([100, 200, 300])
     })
 
-    it('should support spread operator via iteration', () => {
-      const parser = array(number())
-      const result = parser.parse(b`[1,2,3]`)
-
-      const values = [...result].map((d) => d.toValue())
-      expect(values).toEqual([1, 2, 3])
-    })
-
-    it('should access nested arrays via at()', () => {
+    it('should access nested arrays via at()', async () => {
       const parser = array(array(number()))
       const result = parser.parse(b`[[1,2],[3,4],[5,6]]`)
 
-      const innerArray = result.at(1)
-      expect(innerArray?.length).toBe(2)
-      expect(innerArray?.at(0)?.toValue()).toBe(3)
-      expect(innerArray?.at(1)?.toValue()).toBe(4)
+      const innerArray = await result.at(1)
+      expect(await innerArray?.length()).toBe(2)
+      expect(await (await innerArray?.at(0))?.toValue()).toBe(3)
+      expect(await (await innerArray?.at(1))?.toValue()).toBe(4)
     })
 
-    it('should access objects within arrays via at()', () => {
+    it('should access objects within arrays via at()', async () => {
       const parser = array(object({ id: number(), name: string() }))
       const result = parser.parse(b`[{"id":1,"name":"first"},{"id":2,"name":"second"}]`)
 
-      const item = result.at(0)
-      expect(item?.get('id').toValue()).toBe(1)
-      expect(item?.get('name').toValue()).toBe('first')
+      const item = await result.at(0)
+      expect(await item?.get('id').toValue()).toBe(1)
+      expect(await item?.get('name').toValue()).toBe('first')
     })
   })
 })

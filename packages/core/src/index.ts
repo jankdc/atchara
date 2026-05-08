@@ -22,6 +22,7 @@ export type {
   SerializedTupleSchema,
   SerializedRecordSchema,
   SerializedRefSchema,
+  SerializedUnionSchema,
   LazyContext,
 } from './schema/types'
 

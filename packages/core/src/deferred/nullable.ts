@@ -29,7 +29,7 @@ export class DeferredNullable<T> implements DeferredValue<T | null> {
    * Get the materialized value.
    * Returns null if the value is null, otherwise returns the stored value.
    */
-  toValue(): T | null {
-    return this.store.get(this.path) as T | null
+  async toValue(): Promise<T | null> {
+    return (await this.store.get(this.path)) as T | null
   }
 }

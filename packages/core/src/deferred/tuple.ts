@@ -89,7 +89,7 @@ export class DeferredTuple<
   /**
    * Return the full tuple as-is (fully materialized).
    */
-  toValue(): T {
-    return this.store.get(this.path) as T
+  async toValue(): Promise<T> {
+    return (await this.store.get(this.path)) as T
   }
 }

@@ -39,7 +39,7 @@ export interface ValueStore {
    * @param path Array of keys/indices to navigate
    * @returns The value at that path, or undefined if not found
    */
-  get(path: string[]): unknown
+  get(path: string[]): Promise<unknown>
 
   /**
    * Check if a value exists at the given path.
@@ -47,11 +47,13 @@ export interface ValueStore {
    * @param path Array of keys/indices to navigate
    * @returns True if a value exists at that path
    */
-  has(path: string[]): boolean
+  has(path: string[]): Promise<boolean>
 
   /**
    * Get metadata about a field without materializing the field itself.
    * Used for checking field existence and schema information.
+   *
+   * Schema-derived; stays synchronous because it doesn't touch storage.
    *
    * @param path Base path to navigate to
    * @param key Field key to check metadata for
@@ -61,25 +63,25 @@ export interface ValueStore {
 
   /**
    * Get the length of an array at the given path.
-   * Used by LazyArray to report length without materializing all elements.
    *
    * @param path Array of keys/indices to navigate
    * @returns The array length, or 0 if not an array
    */
-  getArrayLength(path: string[]): number
+  getArrayLength(path: string[]): Promise<number>
 
   /**
    * Get all keys of a record at the given path.
-   * Used by LazyRecord to enumerate keys without materializing all values.
    *
    * @param path Array of keys/indices to navigate
    * @returns Array of all keys in the record
    */
-  getRecordKeys(path: string[]): string[]
+  getRecordKeys(path: string[]): Promise<string[]>
 
   /**
    * Get the definitions table for resolving ref schemas.
    * Returns an empty array if no lazy/recursive schemas are in use.
+   *
+   * Schema-derived; stays synchronous.
    */
   getDefs(): SerializedSchema[]
 }

@@ -627,7 +627,7 @@ describe('RFC 8259 General Compliance', () => {
 
   // Performance - sync only
   describe('Performance Considerations', () => {
-    it('should parse complex nested structures efficiently', () => {
+    it('should parse complex nested structures efficiently', async () => {
       const complexParser = object({
         users: array(
           object({
@@ -675,7 +675,7 @@ describe('RFC 8259 General Compliance', () => {
       const result = complexParser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(complexData)
+      expect(await result.toValue()).toEqual(complexData)
       expect(duration).toBeLessThan(500) // Should parse complex structure efficiently
     })
   })

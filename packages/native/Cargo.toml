@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 convert-to-sync-macro = { path = "convert-to-sync-macro" }
-redb = "2"
+kahon = "0.4"
 mimalloc = "0.1"
 napi = { version = "3.8", default-features = false, features = ["napi8"] }
 napi-derive = "3.5"

@@ -558,7 +558,7 @@ describe('Optional Schema', () => {
 
   // Performance - sync only
   describe('Performance', () => {
-    it('should handle objects with many optional fields efficiently', () => {
+    it('should handle objects with many optional fields efficiently', async () => {
       const parser = object({
         required: string(),
         ...Object.fromEntries(
@@ -577,8 +577,8 @@ describe('Optional Schema', () => {
       const result2 = parser.parse(b`${inputWithAllOptionals}`)
       const duration = performance.now() - start
 
-      expect(result1.toValue().required).toBe('test')
-      expect(result2.toValue().required).toBe('test')
+      expect((await result1.toValue()).required).toBe('test')
+      expect((await result2.toValue()).required).toBe('test')
       expect(duration).toBeLessThan(200)
     })
   })

@@ -3,7 +3,7 @@
  *
  * Enables the same test cases to run against:
  * - sync: In-memory BufferEncoder (parse())
- * - streaming: Chunked redb storage (parseLargeStream())
+ * - streaming: Chunked kahon storage (parseLargeStream())
  */
 
 import { Readable } from 'node:stream'
@@ -45,14 +45,14 @@ export async function parseWithMode<S extends Schema<unknown, unknown, DeferredV
   switch (mode) {
     case 'sync': {
       const result = parser.parse(input)
-      return result.toValue() as Unwrap<InferDeferred<S>>
+      return (await result.toValue()) as Unwrap<InferDeferred<S>>
     }
 
     case 'streaming': {
       const stream = createChunkedStream(input, chunkSize)
       const result = await parser.parseLarge(stream)
       try {
-        return result.data.toValue() as Unwrap<InferDeferred<S>>
+        return (await result.data.toValue()) as Unwrap<InferDeferred<S>>
       } finally {
         result.close()
       }

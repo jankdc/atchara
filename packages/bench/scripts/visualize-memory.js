@@ -64,7 +64,7 @@ const html = `<!DOCTYPE html>
     </div>
 
     <div class="section">
-      <h2 class="section-title">Disk Usage (redb)</h2>
+      <h2 class="section-title">Disk Usage (kahon)</h2>
       <div class="chart-container"><canvas id="disk-usage"></canvas></div>
     </div>
   </div>
@@ -90,7 +90,7 @@ const html = `<!DOCTYPE html>
       { label: 'Peak RSS', value: fmt(summary.peak_rss) },
       { label: 'Peak Heap', value: fmt(summary.peak_heap_used) },
       { label: 'Peak Rust Buffer', value: fmt(summary.peak_rust_buffer) },
-      { label: 'Peak redb File', value: fmt(summary.peak_redb_file) },
+      { label: 'Peak kahon File', value: fmt(summary.peak_kahon_file) },
       { label: 'Total Chunks', value: meta.total_chunks.toLocaleString() },
       { label: 'Elapsed', value: (meta.elapsed_ms / 1000).toFixed(2) + 's' },
       { label: 'Samples', value: meta.total_samples.toLocaleString() },
@@ -154,7 +154,7 @@ const html = `<!DOCTYPE html>
 
     // Disk usage chart
     makeChart('disk-usage', [
-      { label: 'redb File Size', data: timeline.map(t => t.redb_file_size), borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.1)', fill: true },
+      { label: 'kahon File Size', data: timeline.map(t => t.kahon_file_size), borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.1)', fill: true },
     ], 'Size');
   </script>
 </body>

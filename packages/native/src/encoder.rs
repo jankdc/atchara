@@ -8,7 +8,7 @@ pub trait StorageEncoder {
     type ArrayHandle;
     type ObjectHandle;
     type RecordHandle;
-    type Snapshot: Copy + Clone;
+    type Snapshot;
 
     // ========================================================================
     // Primitives

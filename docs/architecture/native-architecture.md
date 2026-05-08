@@ -10,9 +10,9 @@ flowchart TD
     B -->|"parse()"| C[DirectContext]
     B -->|"parseLarge()"| D[StreamingContext]
     C --> E[BufferEncoder]
-    D --> F[RedbEncoder]
+    D --> F[KahonEncoder]
     E --> G[Binary buffer + offset table]
-    F --> H[redb persistent storage]
+    F --> H[Temp .kahon file]
 ```
 
 Two parsing modes share the same schema-driven parser logic but differ in input handling and output storage.
@@ -38,7 +38,7 @@ pub struct StreamingSession { ... }
 #[napi]
 impl StreamingSession {
     fn feed(&mut self, chunk: Buffer) -> (i32, Buffer);
-    fn finish(&mut self) -> (bool, Buffer, Option<RedbClient>);
+    fn finish(&mut self) -> (bool, Buffer, Option<KahonHandle>);
     fn abort(&mut self) -> ();
 }
 ```
@@ -46,7 +46,7 @@ impl StreamingSession {
 - `parse()` returns `(is_error, bytes)` — error bytes or value data + offset table
 - `create_streaming_session()` returns a `StreamingSession` for incremental parsing
 - `feed()` accepts chunks, returns status (`1` = ok, `-1` = error with error bytes)
-- `finish()` completes parsing, returns error or a `RedbClient` handle for lazy reads
+- `finish()` completes parsing, returns error or a `KahonHandle` whose temp `.kahon` file the JS side opens for lazy reads
 
 ## Components
 
@@ -88,7 +88,7 @@ trait StorageEncoder {
 Two implementations:
 
 - **BufferEncoder** — writes to in-memory `Vec<u8>` with offset table (direct mode)
-- **RedbEncoder** — writes to redb database with path-based keys (streaming mode)
+- **KahonEncoder** — streams to a temp `.kahon` file via `kahon::raw::RawWriter` (streaming mode)
 
 ### Parser (`parser/mod.rs`)
 
@@ -106,7 +106,7 @@ match &schema.kind {
 Each type parser:
 
 1. Validates JSON structure against schema
-2. Writes values directly to encoder (buffer or redb)
+2. Writes values directly to encoder (buffer or kahon)
 3. Returns error with position on validation failure
 
 ## SIMD Optimizations
@@ -182,14 +182,25 @@ Errors convert to JavaScript `Error` objects with:
 
 See [Error Handling](./error-handling.md) for full details.
 
-## redb Integration
+## kahon Integration
 
-The streaming mode uses [redb](https://github.com/cberner/redb) as an embedded key-value store for parsed values:
+The streaming mode persists parsed values as a [kahon](https://github.com/jankdc/kahon)
+binary document on disk. kahon containers are bulk-loaded B+trees with
+absolute byte offsets, so the JS reader does true random-access lookups
+without scanning.
 
-- **Path-based keys**: Values stored at `d:{path}`, metadata at `m:{path}:{suffix}`
-- **Object packing**: Primitive fields packed into a single blob to reduce I/O
-- **Sorted keys**: Enables prefix queries for record key enumeration
-- **Session lifecycle**: `RedbClient` returned to TypeScript for lazy reads, closed explicitly
+- **Streamed writes**: `kahon::raw::RawWriter<File>` emits scalars
+  immediately and buffers per-frame B+tree state — memory bounded by
+  tree depth, not document size.
+- **Schema overlay**: schema-only types map onto JSON-domain values:
+  unions become `[index, value]` 2-arrays, nullable fields become null
+  or the inner value, optional absence omits the parent's key.
+- **Trailer snapshots**: `parseEach` calls `RawWriter::snapshot_trailer()`
+  at top-level array element boundaries to synthesize closing bytes for
+  the in-progress document; the JS side stitches those bytes over the
+  live file with a `SnapshotByteSource`.
+- **Session lifecycle**: `KahonHandle` (parseLarge) / `IteratingHandle`
+  (parseEach) own the temp file path and delete it on `close()` or GC.
 
 ## Performance Features
 

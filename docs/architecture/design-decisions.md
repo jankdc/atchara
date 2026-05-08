@@ -137,7 +137,7 @@ const name = result.get('name').toValue() // Access on-demand
 Why not return plain values?
 
 - **Lazy decoding**: Only accessed fields are decoded from binary
-- **ValueStore abstraction**: Decouples deferred types from storage backend (MemoryStore for direct, RedbStore for streaming)
+- **ValueStore abstraction**: Decouples deferred types from storage backend (MemoryStore for direct, KahonStore for streaming)
 - **Consistent API**: All access goes through `.get()` / `.toValue()` regardless of parsing mode
 
 Navigating with `.get()` or `.at()` creates lightweight wrapper objects without decoding. Actual decoding only happens when `.toValue()` is called.
@@ -161,27 +161,27 @@ Why not discriminated unions only?
 
 Trade-off: O(n) worst case for n variants. Use discriminated unions (literal fields) when order matters.
 
-## Streaming with redb
+## Streaming with kahon
 
-Large documents that exceed available memory use a streaming pipeline with persistent storage:
+Large documents that exceed available memory use a streaming pipeline that spills to a temp `.kahon` file:
 
 ```typescript
 const result = await Schema.parseLarge(readableStream)
-// result.data is a deferred wrapper backed by redb
-result.data.get('field').toValue()
-result.close() // explicit cleanup
+// result.data is a deferred wrapper backed by the temp kahon file
+await result.data.get('field').toValue()
+result.close() // deletes the temp file
 ```
 
-Why redb?
+Why kahon?
 
-- **Persistent key-value store**: Values written to disk as they're parsed, not held in memory
-- **Sorted keys**: Enables prefix-based queries for enumerating record keys or packed fields
-- **Embedded**: No external database dependency, single-file storage
-- **Transactional**: ACID writes ensure consistency even if parsing is interrupted
+- **Random-access binary format**: Native B+tree containers for arrays and objects mean path lookups don't need a separate key-encoding scheme
+- **Single-file artifact**: One temp file per parse — easy lifecycle (created on `parseLarge`, deleted on `close()`)
+- **Streaming-friendly trailer**: `parseEach` reuses the same on-disk format by appending trailer snapshots as elements become ready
+- **Shared format with kahon-js**: The JS side reads via `kahon-js`'s `FileSource`, so the storage layer is small
 
 The streaming pipeline uses `StreamingContext` in Rust, which manages an incremental input buffer with compaction (discards committed bytes when exceeding 64KB). Union backtracking temporarily prevents compaction to allow rewinding.
 
-Trade-off: I/O overhead from disk storage. Only use for documents too large for in-memory parsing.
+Trade-off: I/O overhead from disk storage, and the JS access path becomes async. Only use for documents too large for in-memory parsing.
 
 ## JavaScript Safe Integer Validation
 

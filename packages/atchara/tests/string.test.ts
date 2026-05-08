@@ -1166,10 +1166,10 @@ describe('String Schema', () => {
 
   // Performance - sync only
   describe('Performance', () => {
-    it('should handle very long strings', () => {
+    it('should handle very long strings', async () => {
       const stringParser = string()
       const longString = 'a'.repeat(10000)
-      expect(stringParser.parse(b`"${longString}"`).toValue()).toBe(longString)
+      expect(await stringParser.parse(b`"${longString}"`).toValue()).toBe(longString)
     })
   })
 })

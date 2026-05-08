@@ -3,7 +3,11 @@ export interface LazyContext {
   defs: SerializedSchema[]
 }
 
-export interface Schema<TOutput = unknown, TInput = unknown, TDeferred = { toValue(): TOutput }> {
+export interface Schema<
+  TOutput = unknown,
+  TInput = unknown,
+  TDeferred = { toValue(): Promise<TOutput> },
+> {
   readonly _output: TOutput
   readonly _input: TInput
   readonly _deferred: TDeferred

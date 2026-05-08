@@ -365,10 +365,10 @@ describe('Union Schema', () => {
           const literalParser = union([literal(true), literal(false)])
           const boolParser = boolean()
           expect(await parseWithMode(literalParser, b`true`, options)).toBe(
-            boolParser.parse(b`true`).toValue()
+            await boolParser.parse(b`true`).toValue()
           )
           expect(await parseWithMode(literalParser, b`false`, options)).toBe(
-            boolParser.parse(b`false`).toValue()
+            await boolParser.parse(b`false`).toValue()
           )
         })
 
@@ -729,11 +729,11 @@ describe('Union Schema', () => {
       }
     })
 
-    it('should allow nullable() as union variant (valid alternative)', () => {
+    it('should allow nullable() as union variant (valid alternative)', async () => {
       const parser = union([nullable(string()), number()])
-      expect(parser.parse(b`null`).toValue()).toBe(null)
-      expect(parser.parse(b`"hello"`).toValue()).toBe('hello')
-      expect(parser.parse(b`42`).toValue()).toBe(42)
+      expect(await parser.parse(b`null`).toValue()).toBe(null)
+      expect(await parser.parse(b`"hello"`).toValue()).toBe('hello')
+      expect(await parser.parse(b`42`).toValue()).toBe(42)
     })
   })
 })

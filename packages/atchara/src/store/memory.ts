@@ -38,7 +38,8 @@ export class MemoryStore implements ValueStore {
     this.decoder = new BufferDecoder(valueData, defs)
   }
 
-  get(path: string[]): unknown {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async get(path: string[]): Promise<unknown> {
     // Look up offset index from schema
     const pathKey = encodePath(path)
     const offsetIdx = this.indexMap.get(pathKey)
@@ -96,7 +97,8 @@ export class MemoryStore implements ValueStore {
     return this.decoder.read(schema)
   }
 
-  has(path: string[]): boolean {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async has(path: string[]): Promise<boolean> {
     if (path.length === 0) {
       return true
     }
@@ -151,7 +153,8 @@ export class MemoryStore implements ValueStore {
     }
   }
 
-  getArrayLength(path: string[]): number {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async getArrayLength(path: string[]): Promise<number> {
     const offset = this.getOffsetForDynamicPath(path)
     if (offset === undefined) return 0
 
@@ -159,7 +162,8 @@ export class MemoryStore implements ValueStore {
     return this.decoder.readArrayLength()
   }
 
-  getRecordKeys(path: string[]): string[] {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async getRecordKeys(path: string[]): Promise<string[]> {
     const offset = this.getOffsetForDynamicPath(path)
     if (offset === undefined) return []
 

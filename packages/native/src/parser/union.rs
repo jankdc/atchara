@@ -14,9 +14,6 @@ impl JsonParser<StreamingContext> {
         encoder: &mut E,
         defs: &[Schema],
     ) -> Result<(), AtcharaError> {
-        let parser_snapshot = self.snapshot();
-        let encoder_snapshot = encoder.snapshot();
-
         self.context.enter_union();
 
         let mut variant_errors: Vec<AtcharaError> = Vec::with_capacity(variants.len());
@@ -25,10 +22,11 @@ impl JsonParser<StreamingContext> {
         let column = self.column();
 
         for (index, variant) in variants.iter().enumerate() {
-            if index > 0 {
-                self.restore(parser_snapshot);
-                encoder.restore(encoder_snapshot);
-            }
+            // Snapshot before each variant; restore on failure so the next variant
+            // attempt starts from a clean slate. Snapshots aren't required to be
+            // Clone, so we re-snapshot per iteration rather than reusing.
+            let parser_snapshot = self.snapshot();
+            let encoder_snapshot = encoder.snapshot();
 
             encoder.begin_variant(index);
 
@@ -38,7 +36,11 @@ impl JsonParser<StreamingContext> {
                     self.context.exit_union();
                     return Ok(());
                 }
-                Err(e) => variant_errors.push(e),
+                Err(e) => {
+                    self.restore(parser_snapshot);
+                    encoder.restore(encoder_snapshot);
+                    variant_errors.push(e);
+                }
             }
         }
 

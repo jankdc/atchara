@@ -549,7 +549,7 @@ describe('Object Schema', () => {
 
   // Deferred Access - sync only
   describe('Deferred Access', () => {
-    it('should access fields via get() without materializing the full object', () => {
+    it('should access fields via get() without materializing the full object', async () => {
       const parser = object({
         name: string(),
         age: number(),
@@ -558,24 +558,24 @@ describe('Object Schema', () => {
 
       const result = parser.parse(b`{"name":"Alice","age":30,"active":true}`)
 
-      expect(result.get('name').toValue()).toBe('Alice')
-      expect(result.get('age').toValue()).toBe(30)
-      expect(result.get('active').toValue()).toBe(true)
+      expect(await result.get('name').toValue()).toBe('Alice')
+      expect(await result.get('age').toValue()).toBe(30)
+      expect(await result.get('active').toValue()).toBe(true)
     })
 
-    it('should check field existence via has()', () => {
+    it('should check field existence via has()', async () => {
       const parser = object({
         required: string(),
         optionalField: optional(number()),
       })
 
       const withOptional = parser.parse(b`{"required":"test","optionalField":42}`)
-      expect(withOptional.has('required')).toBe(true)
-      expect(withOptional.has('optionalField')).toBe(true)
+      expect(await withOptional.has('required')).toBe(true)
+      expect(await withOptional.has('optionalField')).toBe(true)
 
       const withoutOptional = parser.parse(b`{"required":"test"}`)
-      expect(withoutOptional.has('required')).toBe(true)
-      expect(withoutOptional.has('optionalField')).toBe(false)
+      expect(await withoutOptional.has('required')).toBe(true)
+      expect(await withoutOptional.has('optionalField')).toBe(false)
     })
 
     it('should return field names via keys()', () => {
@@ -589,7 +589,7 @@ describe('Object Schema', () => {
       expect(result.keys()).toEqual(['a', 'b', 'c'])
     })
 
-    it('should iterate over entries with Symbol.iterator', () => {
+    it('should iterate over entries with Symbol.iterator', async () => {
       const parser = object({
         name: string(),
         count: number(),
@@ -599,7 +599,7 @@ describe('Object Schema', () => {
       const entries: Array<[string, unknown]> = []
 
       for (const [key, deferred] of result) {
-        entries.push([key as string, deferred.toValue()])
+        entries.push([key as string, await deferred.toValue()])
       }
 
       expect(entries).toEqual([
@@ -608,7 +608,7 @@ describe('Object Schema', () => {
       ])
     })
 
-    it('should access nested objects via get() without materializing parents', () => {
+    it('should access nested objects via get() without materializing parents', async () => {
       const parser = object({
         user: object({
           profile: object({
@@ -618,25 +618,25 @@ describe('Object Schema', () => {
       })
 
       const result = parser.parse(b`{"user":{"profile":{"name":"Deep"}}}`)
-      const name = result.get('user').get('profile').get('name').toValue()
+      const name = await result.get('user').get('profile').get('name').toValue()
       expect(name).toBe('Deep')
     })
 
-    it('should access arrays within objects via get()', () => {
+    it('should access arrays within objects via get()', async () => {
       const parser = object({
         items: array(number()),
       })
 
       const result = parser.parse(b`{"items":[1,2,3]}`)
       const items = result.get('items')
-      expect(items.length).toBe(3)
-      expect(items.at(0)?.toValue()).toBe(1)
+      expect(await items.length()).toBe(3)
+      expect(await (await items.at(0))?.toValue()).toBe(1)
     })
   })
 
   // Performance - sync only
   describe('Performance', () => {
-    it('should handle large objects efficiently', () => {
+    it('should handle large objects efficiently', async () => {
       const largeObjectParser = object({
         ...Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`field${i}`, number()])),
       })
@@ -650,12 +650,12 @@ describe('Object Schema', () => {
       const result = largeObjectParser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(largeObjectData)
+      expect(await result.toValue()).toEqual(largeObjectData)
       expect(duration).toBeLessThan(200) // Should parse efficiently
     })
 
     /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
-    it('should handle deeply nested objects efficiently', () => {
+    it('should handle deeply nested objects efficiently', async () => {
       // Test with a reasonable nesting depth that should work
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const createDeepParser = (depth: number): any => {
@@ -682,7 +682,7 @@ describe('Object Schema', () => {
       const result = parser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(data)
+      expect(await result.toValue()).toEqual(data)
       expect(duration).toBeLessThan(500) // Should parse efficiently
     })
 

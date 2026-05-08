@@ -295,7 +295,7 @@ const Schema = object({
 const stream = createReadStream('large-file.json')
 const result = await Schema.parseLarge(stream)
 
-// Access values lazily (backed by redb persistent storage)
+// Access values lazily (backed by a temp kahon file)
 const firstItem = result.data.get('data').at(0)?.toValue()
 
 // Explicit cleanup required when done
@@ -307,7 +307,7 @@ result.close()
 |           | `parse()`               | `parseLarge()`                             |
 | --------- | ----------------------- | ------------------------------------------ |
 | Input     | `Uint8Array`            | `Readable` stream                          |
-| Storage   | In-memory binary buffer | redb persistent storage                    |
+| Storage   | In-memory binary buffer | Temp `.kahon` file (random-access B+tree)  |
 | Lifecycle | Automatic (GC)          | Manual (`close()` required)                |
 | Returns   | Deferred wrapper        | `LargeParseResult` with `data` + `close()` |
 
@@ -316,7 +316,7 @@ result.close()
 ```typescript
 interface LargeParseResult<T> {
   data: InferDeferred<T> // Deferred-wrapped result
-  close(): void // Release redb resources
+  close(): void // Delete the temp kahon file
   isClosed: boolean // Check if already closed
 }
 ```

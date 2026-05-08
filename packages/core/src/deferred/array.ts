@@ -43,17 +43,19 @@ export class DeferredArray<T = unknown, E = DeferredValue<T>> implements Deferre
 
   /**
    * Get the number of elements in the array.
+   * Async because the length is read from storage.
    */
-  get length(): number {
-    return this.store.getArrayLength(this.path)
+  async length(): Promise<number> {
+    return await this.store.getArrayLength(this.path)
   }
 
   /**
    * Get an element at the specified index as a deferred wrapper.
-   * Returns undefined if index is out of bounds.
+   * Returns undefined if the index is out of bounds.
+   * Async because bounds-checking reads the array length from storage.
    */
-  at(index: number): E | undefined {
-    if (index < 0 || index >= this.length) {
+  async at(index: number): Promise<E | undefined> {
+    if (index < 0 || index >= (await this.length())) {
       return undefined
     }
 
@@ -63,10 +65,11 @@ export class DeferredArray<T = unknown, E = DeferredValue<T>> implements Deferre
 
   /**
    * Iterate over array elements, deferred wrapping each value.
-   * Enables native JavaScript iteration: for (const item of array)
+   * Enables `for await (const item of array)` iteration.
    */
-  *[Symbol.iterator](): IterableIterator<E> {
-    for (let i = 0; i < this.length; i++) {
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<E> {
+    const len = await this.length()
+    for (let i = 0; i < len; i++) {
       const elementPath = [...this.path, String(i)]
       yield wrapDeferred(this.store, elementPath, this.arraySchema.elements) as E
     }
@@ -75,7 +78,7 @@ export class DeferredArray<T = unknown, E = DeferredValue<T>> implements Deferre
   /**
    * Return the full array as-is (fully materialized).
    */
-  toValue(): T[] {
-    return this.store.get(this.path) as T[]
+  async toValue(): Promise<T[]> {
+    return (await this.store.get(this.path)) as T[]
   }
 }

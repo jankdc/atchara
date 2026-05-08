@@ -5,7 +5,7 @@
 import type { Schema } from '../schema/types'
 
 export interface DeferredValue<T> {
-  toValue(): T
+  toValue(): Promise<T>
 }
 
 /**

@@ -17,7 +17,7 @@ export interface Parser<T extends Schema> {
 
   /**
    * Parse large JSON documents incrementally from a readable stream.
-   * Parses and stores to redb as chunks arrive - never buffers the entire document.
+   * Parses and stores to a kahon temp file as chunks arrive - never buffers the entire document.
    * Enables parsing files larger than available RAM.
    * Returns a result object with explicit close() for resource management.
    */

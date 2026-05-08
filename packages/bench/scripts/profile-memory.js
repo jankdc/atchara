@@ -4,7 +4,7 @@
  * Memory Timeline Profiler for parseLarge
  *
  * Instruments parseLarge with periodic sampling of JS heap, Rust buffer state,
- * and redb file size. Outputs a JSON timeline for visualization.
+ * and the kahon temp file size. Outputs a JSON timeline for visualization.
  *
  * Usage: node profile-memory.js --input <path> [--output <path>] [--interval <ms>]
  *   --input     Path to large JSON file (from generate-large-json.js)
@@ -75,28 +75,28 @@ async function profileParseLarge() {
   let lastSampleTime = startTime
 
   const tempDir = tmpdir()
-  let redbPath = null
+  let kahonPath = null
 
-  function getRedbFileSize() {
-    if (!redbPath) {
+  function getKahonFileSize() {
+    if (!kahonPath) {
       try {
         const files = readdirSync(tempDir)
-          .filter((f) => f.startsWith('atchara-stream-') && f.endsWith('.redb'))
+          .filter((f) => f.startsWith('atchara-stream-') && f.endsWith('.kahon'))
           .map((f) => {
             const fullPath = join(tempDir, f)
             return { path: fullPath, mtime: statSync(fullPath).mtimeMs }
           })
           .sort((a, b) => b.mtime - a.mtime)
         if (files.length > 0) {
-          redbPath = files[0].path
+          kahonPath = files[0].path
         }
       } catch {
         // Ignore scan errors
       }
     }
-    if (redbPath) {
+    if (kahonPath) {
       try {
-        return statSync(redbPath).size
+        return statSync(kahonPath).size
       } catch {
         return 0
       }
@@ -115,7 +115,7 @@ async function profileParseLarge() {
       // Session may be finished or aborted
     }
 
-    const redbSize = getRedbFileSize()
+    const kahonSize = getKahonFileSize()
 
     timeline.push({
       time_ms: Math.round(now - startTime),
@@ -131,9 +131,12 @@ async function profileParseLarge() {
       rust_parse_position: rustStats?.parsePosition ?? null,
       rust_committed_position: rustStats?.committedPosition ?? null,
       rust_compactions: rustStats?.compactionCount ?? null,
-      rust_pending_writes_count: rustStats?.pendingWritesCount ?? null,
-      rust_pending_writes_bytes: rustStats?.pendingWritesBytes ?? null,
-      redb_file_size: redbSize,
+      // bytesWritten is u64 (BigInt) on the JS side; coerce to number for the
+      // timeline. Documents > 2^53 bytes lose precision, but the existing
+      // visualizer already plots numbers, so this matches its expectations.
+      rust_bytes_written: rustStats?.bytesWritten != null ? Number(rustStats.bytesWritten) : null,
+      rust_buffered_bytes: rustStats?.bufferedBytes ?? null,
+      kahon_file_size: kahonSize,
     })
   }
 
@@ -169,7 +172,7 @@ async function profileParseLarge() {
   // Final sample before finish
   sample()
 
-  const [isError, , redbClient] = session.finish()
+  const [isError, , kahonHandle] = session.finish()
 
   // Post-finish sample
   sample()
@@ -177,7 +180,7 @@ async function profileParseLarge() {
   if (isError) {
     console.error('\nParse error during finish')
   } else {
-    if (redbClient) redbClient.close()
+    if (kahonHandle) kahonHandle.close()
   }
 
   const elapsed = performance.now() - startTime
@@ -188,7 +191,7 @@ async function profileParseLarge() {
 
   const peakRss = Math.max(...timeline.map((t) => t.rss))
   const peakHeap = Math.max(...timeline.map((t) => t.heap_used))
-  const maxRedb = Math.max(...timeline.map((t) => t.redb_file_size))
+  const maxKahon = Math.max(...timeline.map((t) => t.kahon_file_size))
   const rustSamples = timeline.filter((t) => t.rust_buffer_size !== null)
   const maxRustBuf =
     rustSamples.length > 0 ? Math.max(...rustSamples.map((t) => t.rust_buffer_size)) : 0
@@ -206,7 +209,7 @@ async function profileParseLarge() {
       peak_rss: peakRss,
       peak_heap_used: peakHeap,
       peak_rust_buffer: maxRustBuf,
-      peak_redb_file: maxRedb,
+      peak_kahon_file: maxKahon,
     },
     timeline,
   }
@@ -216,7 +219,7 @@ async function profileParseLarge() {
   console.log(`  Peak RSS:         ${(peakRss / 1024 / 1024).toFixed(1)} MB`)
   console.log(`  Peak heap used:   ${(peakHeap / 1024 / 1024).toFixed(1)} MB`)
   console.log(`  Peak Rust buffer: ${(maxRustBuf / 1024).toFixed(1)} KB`)
-  console.log(`  Peak redb file:   ${(maxRedb / 1024 / 1024).toFixed(1)} MB`)
+  console.log(`  Peak kahon file:  ${(maxKahon / 1024 / 1024).toFixed(1)} MB`)
 }
 
 profileParseLarge().catch((err) => {

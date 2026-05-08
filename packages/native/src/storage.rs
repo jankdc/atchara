@@ -1,557 +1,475 @@
-//! redb storage backend for large document parsing.
+//! Kahon writer-backed storage for streaming parses.
 //!
-//! Stores each value with a path-based key for true per-field lazy loading.
-//! Key format: d:{path} for data, m:{path}:{suffix} for metadata.
+//! Each schema-driven write is funneled into a `kahon::raw::RawWriter<File>`
+//! that emits a JSON-shaped binary document to a temp file. Schema-aware
+//! types that don't exist in kahon's JSON value model are mapped:
+//!
+//! - `nullable<T>` present  → value of `T`
+//! - `nullable<T>` null     → kahon `null`
+//! - `optional<T>` present  → key + value (parent object)
+//! - `optional<T>` absent   → key omitted
+//! - `tuple<T₁..Tₙ>`        → kahon array
+//! - `record<V>`            → kahon object (no schema-time keys)
+//! - `union` variant `i`    → kahon array `[i, value]`
+//!
+//! The decoder uses the schema to interpret the JSON-shape representation.
 
-use napi::bindgen_prelude::*;
-use napi_derive::napi;
-use redb::{Database, TableDefinition, WriteTransaction};
 use std::cell::RefCell;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use kahon::raw::{Checkpoint, RawWriter};
+use kahon::{RewindableSink, TrailerSnapshot, WriteError};
+use napi::bindgen_prelude::*;
+use napi_derive::napi;
+
 use crate::encoder::StorageEncoder;
 
-pub(crate) const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("data");
-
 // ============================================================================
-// Object scalar packing — buffer primitive fields into a single blob per object
+// KahonSink - file sink with optional in-memory buffering.
 // ============================================================================
 
-struct PackedFieldEntry {
-    field_index: u16,
-    data: Vec<u8>, // tag byte + optional encoded value
+/// File-backed kahon sink. Optionally buffers writes (BufWriter-like) to
+/// amortise the per-`push_*` syscall cost of feeding kahon's raw writer.
+///
+/// Buffering is opt-in per session because parseEach's `snapshot_trailer`
+/// path needs the on-disk file to be consistent at any moment (the JS side
+/// reads from the live file). parseLarge has a clean write-then-read
+/// boundary, so it can always buffer.
+pub struct KahonSink {
+    file: std::fs::File,
+    buf: Vec<u8>,
 }
 
-struct ObjectPackContext {
-    base_depth: usize,
-    packed_fields: Vec<PackedFieldEntry>,
-    current_field_buf: Vec<u8>,
-    current_field_index: u16,
-    current_field_active: bool,
-    current_field_structural: bool,
-    /// Metadata buffered while we determine if the field is packable or structural.
-    /// Flushed to storage if a structural begin is detected.
-    buffered_metadata: Vec<(String, Vec<u8>)>,
-}
-
-impl ObjectPackContext {
-    fn new(base_depth: usize) -> Self {
+impl KahonSink {
+    /// Sink that batches writes through an in-memory buffer of the given
+    /// capacity. A capacity of 0 falls back to direct writes.
+    pub fn buffered(file: std::fs::File, capacity: usize) -> Self {
         Self {
-            base_depth,
-            packed_fields: Vec::new(),
-            current_field_buf: Vec::new(),
-            current_field_index: 0,
-            current_field_active: false,
-            current_field_structural: false,
-            buffered_metadata: Vec::new(),
-        }
-    }
-}
-
-// ============================================================================
-// RedbEncoder - StorageEncoder implementation for redb storage
-// ============================================================================
-
-pub struct RedbEncoder {
-    path_stack: Vec<String>,
-    pending_writes: Vec<(String, Vec<u8>)>,
-    error: Option<String>,
-    pack_stack: Vec<ObjectPackContext>,
-}
-
-impl Default for RedbEncoder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RedbEncoder {
-    pub fn new() -> Self {
-        Self {
-            path_stack: Vec::new(),
-            pending_writes: Vec::new(),
-            error: None,
-            pack_stack: Vec::new(),
+            file,
+            buf: Vec::with_capacity(capacity),
         }
     }
 
-    fn current_key(&self) -> String {
-        if self.path_stack.is_empty() {
-            "d:".to_string()
-        } else {
-            format!("d:{}", self.path_stack.join(":"))
-        }
+    /// Sink that writes directly to the file with no in-memory buffering.
+    pub fn unbuffered(file: std::fs::File) -> Self {
+        Self::buffered(file, 0)
     }
 
-    pub fn pending_writes_count(&self) -> usize {
-        self.pending_writes.len()
-    }
-
-    pub fn pending_writes_bytes(&self) -> usize {
-        self.pending_writes
-            .iter()
-            .map(|(k, v)| k.len() + v.len())
-            .sum()
-    }
-
-    fn write_value(&mut self, value: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
-        let key = self.current_key();
-        self.pending_writes.push((key, value.to_vec()));
-    }
-
-    fn write_metadata(&mut self, suffix: &str, value: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
-        let key = if self.path_stack.is_empty() {
-            format!("m::{}", suffix)
-        } else {
-            format!("m:{}:{}", self.path_stack.join(":"), suffix)
-        };
-        self.pending_writes.push((key, value.to_vec()));
-    }
-
-    /// Flush pending writes to the given transaction's table.
-    pub fn flush(&mut self, txn: &WriteTransaction) -> std::result::Result<(), String> {
-        if let Some(e) = self.error.take() {
-            return Err(e);
-        }
-
-        let mut table = txn.open_table(TABLE).map_err(|e| e.to_string())?;
-        for (key, value) in self.pending_writes.drain(..) {
-            table
-                .insert(key.as_str(), value.as_slice())
-                .map_err(|e| e.to_string())?;
+    /// Drain any buffered bytes to disk.
+    fn flush_buffer(&mut self) -> io::Result<()> {
+        if !self.buf.is_empty() {
+            self.file.write_all(&self.buf)?;
+            self.buf.clear();
         }
         Ok(())
     }
 
-    /// True when inside a pack context and at the direct field depth (one level below the object).
-    fn at_packable_depth(&self) -> bool {
-        if let Some(ctx) = self.pack_stack.last() {
-            ctx.current_field_active
-                && !ctx.current_field_structural
-                && self.path_stack.len() == ctx.base_depth + 1
-        } else {
-            false
+    /// Flush and unwrap the underlying file. Required after `RawWriter::finish`
+    /// so callers (and any concurrent JS readers) see the trailer on disk.
+    pub fn into_inner(mut self) -> io::Result<std::fs::File> {
+        self.flush_buffer()?;
+        Ok(self.file)
+    }
+}
+
+impl Write for KahonSink {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        let cap = self.buf.capacity();
+        // Unbuffered (capacity == 0) — passthrough.
+        if cap == 0 {
+            return self.file.write(data);
+        }
+        // Single write larger than the buffer: flush then write through to
+        // the file directly so we don't waste a copy through the buffer.
+        if data.len() >= cap {
+            self.flush_buffer()?;
+            return self.file.write(data);
+        }
+        // Wouldn't fit alongside what's already buffered: flush first.
+        if self.buf.len() + data.len() > cap {
+            self.flush_buffer()?;
+        }
+        self.buf.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flush_buffer()?;
+        self.file.flush()
+    }
+}
+
+impl RewindableSink for KahonSink {
+    fn rewind_to(&mut self, len: u64) -> io::Result<()> {
+        // Empty the in-memory buffer first; otherwise the next write would
+        // re-emit bytes past `len` that the writer has logically discarded.
+        self.flush_buffer()?;
+        self.file.set_len(len)?;
+        self.file.seek(SeekFrom::Start(len))?;
+        Ok(())
+    }
+}
+
+// ============================================================================
+// KahonEncoder - StorageEncoder implementation backed by kahon::raw::RawWriter
+// ============================================================================
+
+/// Encoder that streams schema-driven values into a kahon binary document.
+///
+/// Holds the kahon writer until the streaming driver pulls it out via
+/// [`KahonEncoder::take_writer`] to call `.finish()` and write the trailer.
+pub struct KahonEncoder {
+    /// `Option` so the streaming driver can extract the writer on `finish()`
+    /// without leaving a dangling encoder in invalid state.
+    writer: Option<RawWriter<KahonSink>>,
+    /// First write error encountered. Subsequent writes become no-ops.
+    /// Drained by the driver after each parse step.
+    error: Option<WriteError>,
+}
+
+impl KahonEncoder {
+    pub fn new(writer: RawWriter<KahonSink>) -> Self {
+        Self {
+            writer: Some(writer),
+            error: None,
         }
     }
 
-    /// Called when a structural begin (object/array/tuple/record/variant) is detected.
-    /// If at direct field depth, marks the field as structural and flushes buffered metadata.
-    fn check_and_mark_structural(&mut self) {
-        let to_flush = if let Some(ctx) = self.pack_stack.last_mut() {
-            if ctx.current_field_active
-                && !ctx.current_field_structural
-                && self.path_stack.len() == ctx.base_depth + 1
-            {
-                ctx.current_field_structural = true;
-                ctx.current_field_buf.clear();
-                Some(ctx.buffered_metadata.drain(..).collect::<Vec<_>>())
-            } else {
-                None
-            }
-        } else {
-            None
+    pub fn take_writer(&mut self) -> Option<RawWriter<KahonSink>> {
+        self.writer.take()
+    }
+
+    pub fn take_error(&mut self) -> Option<WriteError> {
+        self.error.take()
+    }
+
+    pub fn has_writer(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    /// Capture a snapshot trailer for the live writer (for parseEach's
+    /// "read while writing" semantics). Does not disturb the writer.
+    pub fn snapshot_trailer(&self) -> Option<std::result::Result<TrailerSnapshot, WriteError>> {
+        self.writer.as_ref().map(|w| w.snapshot_trailer())
+    }
+
+    /// Bytes written to the underlying sink so far.
+    pub fn bytes_written(&self) -> u64 {
+        self.writer.as_ref().map(|w| w.bytes_written()).unwrap_or(0)
+    }
+
+    /// Approximate live in-memory footprint of buffered B+tree state.
+    pub fn buffered_bytes(&self) -> usize {
+        self.writer
+            .as_ref()
+            .map(|w| w.buffered_bytes())
+            .unwrap_or(0)
+    }
+
+    /// Run `f` on the live writer; if it errors, latch the error so future
+    /// writes become no-ops until the driver drains it.
+    fn with_writer<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut RawWriter<KahonSink>) -> std::result::Result<(), WriteError>,
+    {
+        if self.error.is_some() {
+            return;
+        }
+        let Some(writer) = self.writer.as_mut() else {
+            return;
         };
-
-        if let Some(entries) = to_flush {
-            for (key, value) in entries {
-                if self.error.is_some() {
-                    return;
-                }
-                self.pending_writes.push((key, value));
-            }
+        if let Err(e) = f(writer) {
+            self.error = Some(e);
         }
     }
 }
 
-pub struct RedbArrayHandle {}
+// All handles are unit — kahon manages frame state internally.
+pub struct KahonArrayHandle;
+pub struct KahonObjectHandle;
+pub struct KahonRecordHandle;
 
-pub struct RedbObjectHandle {
-    field_count: u32,
+/// Snapshot wraps a kahon Checkpoint. `Option` so we can no-op restores
+/// when the matching snapshot was never captured (encoder already errored).
+pub struct KahonSnapshot {
+    checkpoint: Option<Checkpoint>,
 }
 
-pub struct RedbRecordHandle {
-    count: u32,
-}
+impl StorageEncoder for KahonEncoder {
+    type ArrayHandle = KahonArrayHandle;
+    type ObjectHandle = KahonObjectHandle;
+    type RecordHandle = KahonRecordHandle;
+    type Snapshot = KahonSnapshot;
 
-#[derive(Copy, Clone)]
-struct PackCtxSnapshot {
-    packed_count: usize,
-    field_buf_len: usize,
-    structural: bool,
-    field_active: bool,
-    metadata_count: usize,
-    field_index: u16,
-}
-
-#[derive(Copy, Clone)]
-pub struct RedbSnapshot {
-    path_depth: usize,
-    pending_count: usize,
-    pack_stack_depth: usize,
-    pack_ctx_state: Option<PackCtxSnapshot>,
-}
-
-impl StorageEncoder for RedbEncoder {
-    type ArrayHandle = RedbArrayHandle;
-    type ObjectHandle = RedbObjectHandle;
-    type RecordHandle = RedbRecordHandle;
-    type Snapshot = RedbSnapshot;
+    // --- primitives -----------------------------------------------------
 
     fn write_null_flag(&mut self) {
-        if let Some(ctx) = self.pack_stack.last_mut()
-            && ctx.current_field_active
-            && !ctx.current_field_structural
-            && self.path_stack.len() == ctx.base_depth + 1
-        {
-            ctx.current_field_buf.push(0x02);
-        }
-        // Always write metadata — redundant for packable fields but needed for
-        // nullable(structural) null values where the reader checks metadata.
-        self.write_metadata("nul", &[0x01]);
+        self.with_writer(|w| w.push_null());
     }
 
     fn write_present_flag(&mut self) {
-        if self.at_packable_depth() {
-            // Buffer the present metadata; discard if field stays packable (implicit
-            // in blob tag 0x01), flush to storage if a structural begin follows.
-            let meta_key = if self.path_stack.is_empty() {
-                "m::nul".to_string()
-            } else {
-                format!("m:{}:nul", self.path_stack.join(":"))
-            };
-            if let Some(ctx) = self.pack_stack.last_mut() {
-                ctx.buffered_metadata.push((meta_key, vec![0x00]));
-            }
-            return;
-        }
-        self.write_metadata("nul", &[0x00]);
+        // No marker needed — a present nullable is just the inner value, and
+        // optional fields are simply present (keyed) in their parent object.
     }
 
     fn write_boolean(&mut self, value: bool) {
-        if let Some(ctx) = self.pack_stack.last_mut()
-            && ctx.current_field_active
-            && !ctx.current_field_structural
-            && self.path_stack.len() == ctx.base_depth + 1
-        {
-            ctx.current_field_buf.push(0x01);
-            ctx.current_field_buf.push(if value { 1 } else { 0 });
-            return;
-        }
-        self.write_value(&[if value { 1 } else { 0 }]);
+        self.with_writer(|w| w.push_bool(value));
     }
 
     fn write_number(&mut self, value: f64) {
-        if let Some(ctx) = self.pack_stack.last_mut()
-            && ctx.current_field_active
-            && !ctx.current_field_structural
-            && self.path_stack.len() == ctx.base_depth + 1
-        {
-            ctx.current_field_buf.push(0x01);
-            ctx.current_field_buf
-                .extend_from_slice(&value.to_be_bytes());
-            return;
-        }
-        self.write_value(&value.to_be_bytes());
+        self.with_writer(|w| w.push_f64(value));
     }
 
-    fn write_string(&mut self, s: &str) {
-        if let Some(ctx) = self.pack_stack.last_mut()
-            && ctx.current_field_active
-            && !ctx.current_field_structural
-            && self.path_stack.len() == ctx.base_depth + 1
-        {
-            ctx.current_field_buf.push(0x01);
-            ctx.current_field_buf
-                .extend_from_slice(&(s.len() as u32).to_be_bytes());
-            ctx.current_field_buf.extend_from_slice(s.as_bytes());
-            return;
-        }
-        self.write_value(s.as_bytes());
+    fn write_string(&mut self, value: &str) {
+        self.with_writer(|w| w.push_str(value));
     }
 
-    fn begin_array(&mut self) -> RedbArrayHandle {
-        self.check_and_mark_structural();
-        RedbArrayHandle {}
+    // --- array ----------------------------------------------------------
+
+    fn begin_array(&mut self) -> KahonArrayHandle {
+        self.with_writer(|w| w.begin_array());
+        KahonArrayHandle
     }
 
-    fn end_array(&mut self, _handle: &mut RedbArrayHandle, count: u32) {
-        self.write_metadata("len", &count.to_be_bytes());
+    fn end_array(&mut self, _handle: &mut KahonArrayHandle, _count: u32) {
+        self.with_writer(|w| w.end_array());
     }
 
-    fn begin_array_element(&mut self, _handle: &mut RedbArrayHandle, index: usize) {
-        self.path_stack.push(index.to_string());
-    }
+    fn begin_array_element(&mut self, _handle: &mut KahonArrayHandle, _index: usize) {}
+    fn end_array_element(&mut self, _handle: &mut KahonArrayHandle) {}
 
-    fn end_array_element(&mut self, _handle: &mut RedbArrayHandle) {
-        self.path_stack.pop();
-    }
+    // --- tuple (schema-fixed length, written as a kahon array) -----------
 
     fn begin_tuple(&mut self, _len: usize) {
-        self.check_and_mark_structural();
+        self.with_writer(|w| w.begin_array());
     }
 
-    fn end_tuple(&mut self, count: u32) {
-        self.write_metadata("len", &count.to_be_bytes());
+    fn end_tuple(&mut self, _count: u32) {
+        self.with_writer(|w| w.end_array());
     }
 
-    fn begin_tuple_element(&mut self, index: usize) {
-        self.path_stack.push(index.to_string());
+    fn begin_tuple_element(&mut self, _index: usize) {}
+    fn end_tuple_element(&mut self) {}
+
+    // --- object ---------------------------------------------------------
+
+    fn begin_object(&mut self, _field_count: usize) -> KahonObjectHandle {
+        self.with_writer(|w| w.begin_object());
+        KahonObjectHandle
     }
 
-    fn end_tuple_element(&mut self) {
-        self.path_stack.pop();
-    }
-
-    fn begin_object(&mut self, _field_count: usize) -> RedbObjectHandle {
-        self.check_and_mark_structural();
-        self.pack_stack
-            .push(ObjectPackContext::new(self.path_stack.len()));
-        RedbObjectHandle { field_count: 0 }
-    }
-
-    fn end_object(&mut self, handle: &mut RedbObjectHandle) {
-        if let Some(mut ctx) = self.pack_stack.pop() {
-            if !ctx.packed_fields.is_empty() {
-                // Serialize packed blob: [u16 count] [u16 field_index, bytes...]...
-                ctx.packed_fields.sort_by_key(|e| e.field_index);
-                let mut blob = Vec::new();
-                blob.extend_from_slice(&(ctx.packed_fields.len() as u16).to_be_bytes());
-                for entry in &ctx.packed_fields {
-                    blob.extend_from_slice(&entry.field_index.to_be_bytes());
-                    blob.extend_from_slice(&entry.data);
-                }
-                self.write_value(&blob);
-            } else {
-                // No packed fields — write len metadata as before
-                self.write_metadata("len", &handle.field_count.to_be_bytes());
-            }
-        }
+    fn end_object(&mut self, _handle: &mut KahonObjectHandle) {
+        self.with_writer(|w| w.end_object());
     }
 
     fn begin_object_field(
         &mut self,
-        handle: &mut RedbObjectHandle,
-        field_index: usize,
+        _handle: &mut KahonObjectHandle,
+        _field_index: usize,
         field_key: &str,
     ) {
-        handle.field_count += 1;
-        if let Some(ctx) = self.pack_stack.last_mut() {
-            ctx.current_field_buf.clear();
-            ctx.current_field_index = field_index as u16;
-            ctx.current_field_active = true;
-            ctx.current_field_structural = false;
-            ctx.buffered_metadata.clear();
-        }
-        self.path_stack.push(field_key.to_string());
+        // Push the key now; the next write_* call supplies the value.
+        let key = field_key.to_string();
+        self.with_writer(|w| w.push_key(&key));
     }
 
-    fn end_object_field(&mut self, _handle: &mut RedbObjectHandle) {
-        if let Some(ctx) = self.pack_stack.last_mut() {
-            if ctx.current_field_active && !ctx.current_field_structural {
-                let mut data = std::mem::take(&mut ctx.current_field_buf);
-                if data.is_empty() {
-                    // Present but no value bytes (e.g., literal null)
-                    data.push(0x01);
-                }
-                ctx.packed_fields.push(PackedFieldEntry {
-                    field_index: ctx.current_field_index,
-                    data,
-                });
-            }
-            ctx.buffered_metadata.clear();
-            ctx.current_field_active = false;
-        }
-        self.path_stack.pop();
+    fn end_object_field(&mut self, _handle: &mut KahonObjectHandle) {}
+
+    fn mark_field_absent(&mut self, _handle: &mut KahonObjectHandle, _field_index: usize) {
+        // Optional absent fields rely on the caller having captured a snapshot
+        // before `begin_object_field` and restored it on the absent path. After
+        // restore, kahon never saw the key. Nothing to clean up.
     }
 
-    fn mark_field_absent(&mut self, _handle: &mut RedbObjectHandle, _field_index: usize) {
-        if let Some(ctx) = self.pack_stack.last_mut() {
-            ctx.current_field_active = false;
-            ctx.buffered_metadata.clear();
-        }
-        self.path_stack.pop();
+    // --- record (kahon object with runtime keys) ------------------------
+
+    fn begin_record(&mut self) -> KahonRecordHandle {
+        self.with_writer(|w| w.begin_object());
+        KahonRecordHandle
     }
 
-    fn begin_record(&mut self) -> RedbRecordHandle {
-        self.check_and_mark_structural();
-        RedbRecordHandle { count: 0 }
+    fn end_record(&mut self, _handle: &mut KahonRecordHandle) {
+        self.with_writer(|w| w.end_object());
     }
 
-    fn end_record(&mut self, handle: &mut RedbRecordHandle) {
-        self.write_metadata("len", &handle.count.to_be_bytes());
+    fn begin_record_entry(&mut self, _handle: &mut KahonRecordHandle, key: &str) {
+        let key = key.to_string();
+        self.with_writer(|w| w.push_key(&key));
     }
 
-    fn begin_record_entry(&mut self, handle: &mut RedbRecordHandle, key: &str) {
-        handle.count += 1;
-        self.path_stack.push(format!("k:{}", key));
-    }
+    fn end_record_entry(&mut self, _handle: &mut KahonRecordHandle) {}
 
-    fn end_record_entry(&mut self, _handle: &mut RedbRecordHandle) {
-        self.path_stack.pop();
-    }
+    // --- union (encoded as 2-tuple [variant_index, value]) --------------
 
     fn begin_variant(&mut self, index: usize) {
-        self.check_and_mark_structural();
-        self.write_metadata("var", &[index as u8]);
-        // Push variant marker to path for nested union separation
-        self.path_stack.push(format!("v{}", index));
+        self.with_writer(|w| {
+            w.begin_array()?;
+            w.push_u64(index as u64)
+        });
     }
 
     fn end_variant(&mut self) {
-        self.path_stack.pop();
+        self.with_writer(|w| w.end_array());
     }
 
-    fn snapshot(&self) -> RedbSnapshot {
-        let pack_ctx_state = self.pack_stack.last().map(|ctx| PackCtxSnapshot {
-            packed_count: ctx.packed_fields.len(),
-            field_buf_len: ctx.current_field_buf.len(),
-            structural: ctx.current_field_structural,
-            field_active: ctx.current_field_active,
-            metadata_count: ctx.buffered_metadata.len(),
-            field_index: ctx.current_field_index,
-        });
-        RedbSnapshot {
-            path_depth: self.path_stack.len(),
-            pending_count: self.pending_writes.len(),
-            pack_stack_depth: self.pack_stack.len(),
-            pack_ctx_state,
+    // --- backtracking ---------------------------------------------------
+
+    fn snapshot(&self) -> KahonSnapshot {
+        KahonSnapshot {
+            // No checkpoint if we've already errored — kahon's poisoned
+            // writer can't snapshot, and a missing checkpoint just means
+            // restore() is a no-op (the parser will surface the error anyway).
+            checkpoint: if self.error.is_some() {
+                None
+            } else {
+                self.writer.as_ref().map(|w| w.checkpoint())
+            },
         }
     }
 
-    fn restore(&mut self, snapshot: RedbSnapshot) {
-        self.path_stack.truncate(snapshot.path_depth);
-        self.pending_writes.truncate(snapshot.pending_count);
-        self.pack_stack.truncate(snapshot.pack_stack_depth);
-        if let Some(ctx_snap) = snapshot.pack_ctx_state
-            && let Some(ctx) = self.pack_stack.last_mut()
+    fn restore(&mut self, snapshot: KahonSnapshot) {
+        let Some(checkpoint) = snapshot.checkpoint else {
+            return;
+        };
+        // Clear any latched error first — restoring should give us a clean
+        // state. If the rollback itself fails, latch the new error.
+        self.error = None;
+        if let Some(writer) = self.writer.as_mut()
+            && let Err(e) = writer.rollback(checkpoint)
         {
-            ctx.packed_fields.truncate(ctx_snap.packed_count);
-            ctx.current_field_buf.truncate(ctx_snap.field_buf_len);
-            ctx.current_field_structural = ctx_snap.structural;
-            ctx.current_field_active = ctx_snap.field_active;
-            ctx.current_field_index = ctx_snap.field_index;
-            ctx.buffered_metadata.truncate(ctx_snap.metadata_count);
+            self.error = Some(e);
         }
     }
 
     fn begin_indexed(&mut self, _schema_index: usize) {}
-
     fn end_indexed(&mut self, _schema_index: usize) {}
 
-    fn finish(&mut self) {}
+    fn finish(&mut self) {
+        // Trailer is written by the streaming driver via take_writer().finish().
+    }
 }
 
 // ============================================================================
-// RedbClient - redb client handle for database access
+// KahonHandle - JS-facing handle to the finished kahon document on disk
 // ============================================================================
 
-/// Uses RefCell<Option<Database>> for explicit close() support while remaining GC-safe.
+/// Owns the temp `.kahon` file that holds a finished streaming parse result.
+///
+/// The JS side opens this path with `kahon-js`'s `FileSource` to read values.
+/// Closing (or finalizing on GC) deletes the file.
 #[napi(custom_finalize)]
-pub struct RedbClient {
-    pub(crate) db: Rc<RefCell<Option<Database>>>,
-    db_path: PathBuf,
+pub struct KahonHandle {
+    /// Wrapped in `Option<...>` so `close()` is idempotent — once cleared,
+    /// finalize doesn't try to delete a file the user may have already removed.
+    state: Rc<RefCell<Option<KahonHandleState>>>,
 }
 
-impl ObjectFinalize for RedbClient {
+struct KahonHandleState {
+    path: PathBuf,
+    length: u64,
+}
+
+impl ObjectFinalize for KahonHandle {
     fn finalize(self, _env: napi::Env) -> Result<()> {
-        if let Some(db) = self.db.borrow_mut().take() {
-            drop(db);
-            std::fs::remove_file(&self.db_path).ok();
+        if let Some(state) = self.state.borrow_mut().take() {
+            std::fs::remove_file(&state.path).ok();
         }
         Ok(())
     }
 }
 
 #[napi]
-impl RedbClient {
-    pub(crate) fn new(db: Database, db_path: PathBuf) -> Self {
+impl KahonHandle {
+    pub(crate) fn new(path: PathBuf, length: u64) -> Self {
         Self {
-            db: Rc::new(RefCell::new(Some(db))),
-            db_path,
+            state: Rc::new(RefCell::new(Some(KahonHandleState { path, length }))),
         }
     }
 
-    /// Execute a closure with the db, returning an error if closed.
-    fn with_db<T, F>(&self, f: F) -> Result<T>
-    where
-        F: FnOnce(&Database) -> Result<T>,
-    {
-        let db_ref = self.db.borrow();
-        match db_ref.as_ref() {
-            Some(db) => f(db),
-            None => Err(Error::from_reason("RedbClient is closed")),
-        }
+    /// Absolute path to the temp `.kahon` file. Empty string after close.
+    #[napi(getter)]
+    pub fn path(&self) -> String {
+        self.state
+            .borrow()
+            .as_ref()
+            .map(|s| s.path.to_string_lossy().into_owned())
+            .unwrap_or_default()
     }
 
-    /// Whether the session has been closed
+    /// File length in bytes (the entire kahon document including trailer).
+    #[napi(getter)]
+    pub fn length(&self) -> BigInt {
+        let len = self.state.borrow().as_ref().map(|s| s.length).unwrap_or(0);
+        BigInt::from(len)
+    }
+
+    /// Whether the handle has been closed (file deleted).
     #[napi(getter)]
     pub fn is_closed(&self) -> bool {
-        self.db.borrow().is_none()
+        self.state.borrow().is_none()
     }
 
-    /// Close the session, releasing all resources.
-    /// Safe to call multiple times (idempotent).
+    /// Close and delete the temp file. Idempotent.
     #[napi]
     pub fn close(&self) -> Result<()> {
-        if let Some(db) = self.db.borrow_mut().take() {
-            drop(db);
-            std::fs::remove_file(&self.db_path).ok();
+        if let Some(state) = self.state.borrow_mut().take() {
+            std::fs::remove_file(&state.path).ok();
         }
         Ok(())
     }
+}
 
-    /// Get value at key
-    #[napi]
-    pub fn get(&self, key: String) -> Result<Option<Buffer>> {
-        self.with_db(|db| {
-            let rtxn = db
-                .begin_read()
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+// ============================================================================
+// IteratingHandle - JS-facing handle for parseEach (long-lived during parse)
+// ============================================================================
 
-            let table = rtxn
-                .open_table(TABLE)
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+/// Owns the temp `.kahon` file for a parseEach session. Unlike
+/// [`KahonHandle`], the file is still being appended to while the JS side
+/// reads from snapshot trailers, so the path is exposed up-front and we
+/// avoid recording a final length.
+#[napi(custom_finalize)]
+pub struct IteratingHandle {
+    state: Rc<RefCell<Option<PathBuf>>>,
+}
 
-            match table.get(key.as_str()) {
-                Ok(Some(guard)) => Ok(Some(Buffer::from(guard.value().to_vec()))),
-                Ok(None) => Ok(None),
-                Err(e) => Err(Error::from_reason(e.to_string())),
-            }
-        })
+impl ObjectFinalize for IteratingHandle {
+    fn finalize(self, _env: napi::Env) -> Result<()> {
+        if let Some(path) = self.state.borrow_mut().take() {
+            std::fs::remove_file(&path).ok();
+        }
+        Ok(())
+    }
+}
+
+#[napi]
+impl IteratingHandle {
+    pub(crate) fn new(path: PathBuf) -> Self {
+        Self {
+            state: Rc::new(RefCell::new(Some(path))),
+        }
     }
 
-    /// Get all keys with prefix (for record key enumeration)
+    #[napi(getter)]
+    pub fn path(&self) -> String {
+        self.state
+            .borrow()
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    #[napi(getter)]
+    pub fn is_closed(&self) -> bool {
+        self.state.borrow().is_none()
+    }
+
     #[napi]
-    pub fn keys_with_prefix(&self, prefix: String) -> Result<Vec<String>> {
-        self.with_db(|db| {
-            let rtxn = db
-                .begin_read()
-                .map_err(|e| Error::from_reason(e.to_string()))?;
-
-            let table = rtxn
-                .open_table(TABLE)
-                .map_err(|e| Error::from_reason(e.to_string()))?;
-
-            let mut keys = Vec::new();
-            let range = table
-                .range(prefix.as_str()..)
-                .map_err(|e| Error::from_reason(e.to_string()))?;
-            for entry in range {
-                let (k, _) = entry.map_err(|e| Error::from_reason(e.to_string()))?;
-                let key_str = k.value();
-                if !key_str.starts_with(&prefix) {
-                    break;
-                }
-                keys.push(key_str.to_string());
-            }
-            Ok(keys)
-        })
+    pub fn close(&self) -> Result<()> {
+        if let Some(path) = self.state.borrow_mut().take() {
+            std::fs::remove_file(&path).ok();
+        }
+        Ok(())
     }
 }

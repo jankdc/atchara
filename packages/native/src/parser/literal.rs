@@ -20,6 +20,10 @@ impl JsonParser<StreamingContext> {
         match literal_value {
             LiteralValue::Null => {
                 Self::parse_null(self, encoder).await?;
+                // Kahon needs an explicit value at every position, so
+                // `literal(null)` writes the null inline rather than relying
+                // on a parent-level "field is null" marker.
+                encoder.write_null_flag();
                 Ok(())
             }
             LiteralValue::Bool(expected_bool) => {

@@ -335,61 +335,61 @@ describe('Tuple Schema', () => {
       expect(result.at(100)).toBeUndefined()
     })
 
-    it('should access elements via at() without materializing the full tuple', () => {
+    it('should access elements via at() without materializing the full tuple', async () => {
       const parser = tuple([string(), number(), boolean()])
       const result = parser.parse(b`["hello",42,true]`)
 
-      expect(result.at(0)?.toValue()).toBe('hello')
-      expect(result.at(1)?.toValue()).toBe(42)
-      expect(result.at(2)?.toValue()).toBe(true)
+      expect(await result.at(0)?.toValue()).toBe('hello')
+      expect(await result.at(1)?.toValue()).toBe(42)
+      expect(await result.at(2)?.toValue()).toBe(true)
     })
 
-    it('should iterate over elements with Symbol.iterator', () => {
+    it('should iterate over elements with Symbol.iterator', async () => {
       const parser = tuple([string(), number(), boolean()])
       const result = parser.parse(b`["test",123,false]`)
       const values: unknown[] = []
 
       for (const deferred of result) {
-        values.push(deferred.toValue())
+        values.push(await deferred.toValue())
       }
 
       expect(values).toEqual(['test', 123, false])
     })
 
-    it('should support spread operator via iteration', () => {
+    it('should support spread operator via iteration', async () => {
       const parser = tuple([number(), number(), number()])
       const result = parser.parse(b`[10,20,30]`)
 
-      const values = [...result].map((d) => d.toValue())
+      const values = await Promise.all([...result].map((d) => d.toValue()))
       expect(values).toEqual([10, 20, 30])
     })
 
-    it('should access nested tuples via at()', () => {
+    it('should access nested tuples via at()', async () => {
       const parser = tuple([tuple([number(), number()]), string()])
       const result = parser.parse(b`[[1,2],"label"]`)
 
       const innerTuple = result.at(0)
-      expect(innerTuple?.at(0)?.toValue()).toBe(1)
-      expect(innerTuple?.at(1)?.toValue()).toBe(2)
-      expect(result.at(1)?.toValue()).toBe('label')
+      expect(await innerTuple?.at(0)?.toValue()).toBe(1)
+      expect(await innerTuple?.at(1)?.toValue()).toBe(2)
+      expect(await result.at(1)?.toValue()).toBe('label')
     })
 
-    it('should access objects within tuples via at()', () => {
+    it('should access objects within tuples via at()', async () => {
       const parser = tuple([object({ x: number(), y: number() }), string()])
       const result = parser.parse(b`[{"x":10,"y":20},"point"]`)
 
       const point = result.at(0)
-      expect(point?.get('x').toValue()).toBe(10)
-      expect(point?.get('y').toValue()).toBe(20)
+      expect(await point?.get('x').toValue()).toBe(10)
+      expect(await point?.get('y').toValue()).toBe(20)
     })
 
-    it('should access arrays within tuples via at()', () => {
+    it('should access arrays within tuples via at()', async () => {
       const parser = tuple([array(number()), string()])
       const result = parser.parse(b`[[1,2,3],"numbers"]`)
 
       const arr = result.at(0)
-      expect(arr?.length).toBe(3)
-      expect(arr?.at(1)?.toValue()).toBe(2)
+      expect(await arr?.length()).toBe(3)
+      expect(await (await arr?.at(1))?.toValue()).toBe(2)
     })
   })
 })

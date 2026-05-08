@@ -1,19 +1,27 @@
 //! Streaming parsing: StreamingContext (growable buffer) + StreamingEngine + StreamingDriver.
+//!
+//! Persistent storage is a kahon binary document written to a temp file.
+//! `StreamingDriver` produces a finalized document (trailer written) and
+//! returns a [`KahonHandle`] to the JS side. `IteratingDriver` keeps the
+//! writer live and synthesizes [`TrailerSnapshot`]s at top-level array
+//! element boundaries so the JS side can read newly-parsed elements while
+//! later ones are still streaming in.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
-use redb::Durability;
+use kahon::TrailerSnapshot;
+use kahon::raw::RawWriter;
 
 use crate::Schema;
 use crate::errors::AtcharaError;
 use crate::input::ParserContext;
 use crate::parser::{JsonParser, ParseResult};
-use crate::storage::{RedbClient, RedbEncoder};
+use crate::storage::{IteratingHandle, KahonEncoder, KahonHandle, KahonSink};
 
 /// Yield request from generator to driver
 pub enum YieldRequest {
@@ -30,8 +38,8 @@ pub struct MemoryStats {
     pub parse_position: usize,
     pub committed_position: usize,
     pub compaction_count: u64,
-    pub pending_writes_count: usize,
-    pub pending_writes_bytes: usize,
+    pub bytes_written: u64,
+    pub buffered_bytes: usize,
 }
 
 /// Owned buffer for generator-based streaming
@@ -231,8 +239,8 @@ pub struct StreamingEngine {
     _state: Pin<Box<StreamingEngineState>>,
     /// Raw pointer to JsonParser inside `_state`. Stable because `_state` is pinned.
     parser_ptr: *mut JsonParser<StreamingContext>,
-    /// Raw pointer to RedbEncoder inside `_state`.
-    encoder_ptr: *mut RedbEncoder,
+    /// Raw pointer to KahonEncoder inside `_state`.
+    encoder_ptr: *mut KahonEncoder,
     /// The parse future (None before first step, consumed on completion).
     future: Option<ParseFuture>,
     schema: Rc<Schema>,
@@ -245,22 +253,27 @@ pub struct StreamingEngine {
 
 struct StreamingEngineState {
     parser: JsonParser<StreamingContext>,
-    encoder: RedbEncoder,
+    encoder: KahonEncoder,
 }
 
 impl StreamingEngine {
-    pub fn new(schema: Rc<Schema>, defs: Rc<Vec<Schema>>, yield_elements: bool) -> Self {
+    pub fn new(
+        schema: Rc<Schema>,
+        defs: Rc<Vec<Schema>>,
+        yield_elements: bool,
+        writer: RawWriter<KahonSink>,
+    ) -> Self {
         let yield_cell = Rc::new(Cell::new(None));
 
         let state = Box::pin(StreamingEngineState {
             parser: JsonParser::new(StreamingContext::new(yield_cell.clone())),
-            encoder: RedbEncoder::new(),
+            encoder: KahonEncoder::new(writer),
         });
 
         // Stable raw pointers — valid as long as _state is alive and pinned
         let parser_ptr = &state.parser as *const JsonParser<StreamingContext>
             as *mut JsonParser<StreamingContext>;
-        let encoder_ptr = &state.encoder as *const RedbEncoder as *mut RedbEncoder;
+        let encoder_ptr = &state.encoder as *const KahonEncoder as *mut KahonEncoder;
 
         Self {
             _state: state,
@@ -306,26 +319,24 @@ impl StreamingEngine {
         parser.context.abort();
     }
 
-    /// Resume (or start) the parse future, returning parse progress.
+    /// Resume (or start) the parse future.
     ///
-    /// The caller must create a write transaction and pass it here.
-    /// On `NeedMoreData`: pending writes are flushed to the transaction.
-    /// On `Complete`: the caller should call `flush` then `txn.commit()`.
-    pub fn step(&mut self, txn: &mut redb::WriteTransaction) -> ParseResult {
+    /// Kahon writes hit the underlying file directly during the future's
+    /// await points, so there's no flush step here — the driver only needs
+    /// to drain encoder errors after each call.
+    pub fn step(&mut self) -> ParseResult {
         if self.future.is_none() {
             self.future = Some(self.create_future());
         }
-        self.poll_future(txn)
+        self.poll_future()
     }
 
-    fn poll_future(&mut self, txn: &mut redb::WriteTransaction) -> ParseResult {
-        let encoder = unsafe { &mut *self.encoder_ptr };
-
+    fn poll_future(&mut self) -> ParseResult {
         let waker = std::task::Waker::noop();
         let mut cx = Context::from_waker(waker);
 
         match self.future.as_mut().unwrap().as_mut().poll(&mut cx) {
-            Poll::Ready(Ok(())) => ParseResult::Complete,
+            Poll::Ready(Ok(())) => self.check_encoder_error(ParseResult::Complete),
             Poll::Ready(Err(e)) => ParseResult::Error(e),
             Poll::Pending => {
                 let request = self
@@ -334,19 +345,24 @@ impl StreamingEngine {
                     .expect("async future suspended without setting yield request");
                 match request {
                     YieldRequest::NeedMoreData(n) => {
-                        if let Err(e) = encoder.flush(txn) {
-                            return ParseResult::Error(AtcharaError::InvalidSchema(e.to_string()));
-                        }
-                        ParseResult::NeedMoreData(n)
+                        self.check_encoder_error(ParseResult::NeedMoreData(n))
                     }
                     YieldRequest::ElementReady(index) => {
-                        if let Err(e) = encoder.flush(txn) {
-                            return ParseResult::Error(AtcharaError::InvalidSchema(e.to_string()));
-                        }
-                        ParseResult::ElementReady(index)
+                        self.check_encoder_error(ParseResult::ElementReady(index))
                     }
                 }
             }
+        }
+    }
+
+    /// If the encoder latched a kahon write error during the last poll,
+    /// surface it as a parse error instead of returning the parse outcome.
+    fn check_encoder_error(&mut self, ok: ParseResult) -> ParseResult {
+        let encoder = unsafe { &mut *self.encoder_ptr };
+        if let Some(err) = encoder.take_error() {
+            ParseResult::Error(AtcharaError::InvalidSchema(err.to_string()))
+        } else {
+            ok
         }
     }
 
@@ -381,10 +397,20 @@ impl StreamingEngine {
         }
     }
 
-    /// Flush remaining pending writes to the transaction.
-    pub fn flush(&mut self, txn: &mut redb::WriteTransaction) -> std::result::Result<(), String> {
+    /// Take a trailer snapshot for the live writer (used by `parseEach`).
+    /// Returns `None` if the writer has already been finalized or has no
+    /// document state to snapshot yet.
+    pub fn snapshot_trailer(&self) -> Option<std::result::Result<TrailerSnapshot, AtcharaError>> {
+        let encoder = unsafe { &*self.encoder_ptr };
+        encoder
+            .snapshot_trailer()
+            .map(|res| res.map_err(|e| AtcharaError::InvalidSchema(e.to_string())))
+    }
+
+    /// Pull the kahon writer out so the driver can call `.finish()` on it.
+    pub fn take_writer(&mut self) -> Option<RawWriter<KahonSink>> {
         let encoder = unsafe { &mut *self.encoder_ptr };
-        encoder.flush(txn)
+        encoder.take_writer()
     }
 
     pub fn get_memory_stats(&self) -> MemoryStats {
@@ -397,8 +423,8 @@ impl StreamingEngine {
             parse_position: ctx.position,
             committed_position: ctx.committed,
             compaction_count: ctx.compaction_count,
-            pending_writes_count: encoder.pending_writes_count(),
-            pending_writes_bytes: encoder.pending_writes_bytes(),
+            bytes_written: encoder.bytes_written(),
+            buffered_bytes: encoder.buffered_bytes(),
         }
     }
 }
@@ -410,8 +436,10 @@ impl StreamingEngine {
 pub struct StreamingDriver {
     engine: StreamingEngine,
     phase: StreamingDriverPhase,
-    db: Option<redb::Database>,
-    db_path: PathBuf,
+    /// Path of the live `.kahon` temp file. Cleared once ownership transfers
+    /// to `KahonHandle` on a successful `finish()`. Drop deletes the file
+    /// otherwise.
+    db_path: Option<PathBuf>,
 }
 
 /// Parse lifecycle phase — encodes valid state transitions at the type level.
@@ -424,20 +452,20 @@ enum StreamingDriverPhase {
 
 impl Drop for StreamingDriver {
     fn drop(&mut self) {
-        // Ensure the redb file is removed when the driver is dropped without
-        // a successful finish() (which transfers ownership to RedbClient).
-        self.db.take();
-        std::fs::remove_file(&self.db_path).ok();
+        // Ensure the kahon file is removed when the driver is dropped without
+        // a successful finish() (which transfers ownership to KahonHandle).
+        if let Some(path) = self.db_path.take() {
+            std::fs::remove_file(&path).ok();
+        }
     }
 }
 
 impl StreamingDriver {
-    pub fn new(engine: StreamingEngine, db: redb::Database, db_path: PathBuf) -> Self {
+    pub fn new(engine: StreamingEngine, db_path: PathBuf) -> Self {
         Self {
             engine,
             phase: StreamingDriverPhase::Parsing,
-            db: Some(db),
-            db_path,
+            db_path: Some(db_path),
         }
     }
 
@@ -453,73 +481,33 @@ impl StreamingDriver {
                 }
                 Ok(())
             }
-            StreamingDriverPhase::Parsing => {
-                let db = self.db.as_ref().unwrap();
-                let mut txn = db
-                    .begin_write()
-                    .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                // Skip fsync — this is temporary session data
-                txn.set_durability(Durability::None);
-
-                match self.engine.step(&mut txn) {
-                    ParseResult::Complete => {
-                        self.phase = StreamingDriverPhase::TrailingCheck;
-
-                        if let Some(err) = self.engine.check_trailing_content() {
-                            drop(txn);
-                            return Err(err);
-                        }
-
-                        self.engine
-                            .flush(&mut txn)
-                            .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                        txn.commit()
-                            .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                        Ok(())
+            StreamingDriverPhase::Parsing => match self.engine.step() {
+                ParseResult::Complete => {
+                    self.phase = StreamingDriverPhase::TrailingCheck;
+                    if let Some(err) = self.engine.check_trailing_content() {
+                        return Err(err);
                     }
-                    ParseResult::NeedMoreData(_) | ParseResult::ElementReady(_) => {
-                        txn.commit()
-                            .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                        Ok(())
-                    }
-                    ParseResult::Error(e) => {
-                        drop(txn);
-                        Err(e)
-                    }
+                    Ok(())
                 }
-            }
+                ParseResult::NeedMoreData(_) | ParseResult::ElementReady(_) => Ok(()),
+                ParseResult::Error(e) => Err(e),
+            },
         }
     }
 
-    /// Signal EOF, run the final parse step, and return the completed RedbClient.
-    /// On success, transfers db ownership to RedbClient (Drop becomes a no-op).
-    /// On error, Drop cleans up the redb file.
-    pub fn finish(mut self) -> Result<RedbClient, AtcharaError> {
+    /// Signal EOF, finalize the kahon document, and return the JS-facing handle.
+    /// On success, transfers the temp-file path to `KahonHandle` (Drop becomes a no-op).
+    /// On error, Drop cleans up the file.
+    pub fn finish(mut self) -> Result<KahonHandle, AtcharaError> {
         if let StreamingDriverPhase::Parsing = self.phase {
             self.engine.signal_eof();
 
-            let db = self.db.as_ref().unwrap();
-            let mut txn = db
-                .begin_write()
-                .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-            txn.set_durability(Durability::None);
-
-            match self.engine.step(&mut txn) {
-                ParseResult::Complete => {
-                    self.engine
-                        .flush(&mut txn)
-                        .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                    txn.commit()
-                        .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
-                }
+            match self.engine.step() {
+                ParseResult::Complete => {}
                 ParseResult::NeedMoreData(_) | ParseResult::ElementReady(_) => {
-                    drop(txn);
                     return Err(self.engine.finalize_error());
                 }
-                ParseResult::Error(e) => {
-                    drop(txn);
-                    return Err(e);
-                }
+                ParseResult::Error(e) => return Err(e),
             }
         }
 
@@ -527,10 +515,28 @@ impl StreamingDriver {
             return Err(err);
         }
 
-        // Transfer db ownership to RedbClient — prevent Drop from deleting the file
-        let db = self.db.take().unwrap();
-        let db_path = std::mem::take(&mut self.db_path);
-        Ok(RedbClient::new(db, db_path))
+        // Pull the kahon writer out and write the trailer.
+        let writer = self
+            .engine
+            .take_writer()
+            .ok_or_else(|| AtcharaError::InvalidSchema("kahon writer already taken".to_string()))?;
+        let length = writer.bytes_written();
+        let sink = writer
+            .finish()
+            .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
+        // Drain any buffered bytes and close the file. into_inner() surfaces
+        // flush errors that a plain `drop` would silently swallow.
+        let file = sink
+            .into_inner()
+            .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))?;
+        drop(file);
+
+        let path = self
+            .db_path
+            .take()
+            .ok_or_else(|| AtcharaError::InvalidSchema("temp path already taken".to_string()))?;
+        let trailer_len = 12u64;
+        Ok(KahonHandle::new(path, length + trailer_len))
     }
 
     /// Explicit abort — Drop handles cleanup, this is just for clarity at call sites.
@@ -549,131 +555,103 @@ impl StreamingDriver {
 
 /// Result of a single feed() call in iterating mode
 pub struct IteratingFeedResult {
-    /// Indices of elements that were fully parsed and flushed to redb
+    /// Indices of elements that were fully parsed during this step
     pub ready_indices: Vec<u32>,
     /// Whether the array has been fully parsed
     pub complete: bool,
     /// Parse error encountered after yielding ready elements
     pub error: Option<AtcharaError>,
+    /// Trailer snapshot covering the elements yielded in this batch.
+    /// `None` when no new elements became ready.
+    pub trailer: Option<TrailerSnapshot>,
 }
 
 pub struct IteratingDriver {
     engine: StreamingEngine,
-    db: Rc<RefCell<Option<redb::Database>>>,
+    /// Owns the temp file path until ownership transfers to IteratingHandle
+    /// at session-creation time. After that, this field is `None` and we
+    /// rely on the handle's lifecycle for cleanup.
+    db_path: Option<PathBuf>,
     complete: bool,
 }
 
+impl Drop for IteratingDriver {
+    fn drop(&mut self) {
+        if let Some(path) = self.db_path.take() {
+            std::fs::remove_file(&path).ok();
+        }
+    }
+}
+
 impl IteratingDriver {
-    pub fn new(engine: StreamingEngine, db: Rc<RefCell<Option<redb::Database>>>) -> Self {
+    pub fn new(engine: StreamingEngine) -> Self {
         Self {
             engine,
-            db,
+            db_path: None,
             complete: false,
         }
     }
 
     /// Feed a chunk and parse until we need more data or finish.
-    /// Returns all element indices that became ready during this feed.
+    /// Returns all element indices that became ready during this feed,
+    /// alongside a trailer snapshot the JS side can layer over the live file.
     pub fn feed(&mut self, chunk: &[u8]) -> IteratingFeedResult {
         self.engine.feed(chunk);
         self.drain_ready()
     }
 
     /// Drain all ready elements from the current buffer state.
-    /// Loops parse_each_step since one chunk may contain multiple elements.
     /// Returns ready indices even if a parse error occurs, so that
     /// successfully parsed elements can be yielded before throwing.
     fn drain_ready(&mut self) -> IteratingFeedResult {
         let mut ready_indices = Vec::new();
 
         loop {
-            let db_ref = self.db.borrow();
-            let db = match db_ref.as_ref() {
-                Some(db) => db,
-                None => {
-                    return IteratingFeedResult {
-                        ready_indices,
-                        complete: false,
-                        error: Some(AtcharaError::InvalidSchema(
-                            "database is closed".to_string(),
-                        )),
-                    };
-                }
-            };
-            let mut txn = match db
-                .begin_write()
-                .map_err(|e| AtcharaError::InvalidSchema(e.to_string()))
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    return IteratingFeedResult {
-                        ready_indices,
-                        complete: false,
-                        error: Some(e),
-                    };
-                }
-            };
-            txn.set_durability(Durability::None);
-
-            match self.engine.step(&mut txn) {
+            match self.engine.step() {
                 ParseResult::ElementReady(index) => {
-                    if let Err(e) = txn.commit() {
-                        return IteratingFeedResult {
-                            ready_indices,
-                            complete: false,
-                            error: Some(AtcharaError::InvalidSchema(e.to_string())),
-                        };
-                    }
                     ready_indices.push(index);
                 }
                 ParseResult::NeedMoreData(_) => {
-                    if let Err(e) = txn.commit() {
-                        return IteratingFeedResult {
-                            ready_indices,
-                            complete: false,
-                            error: Some(AtcharaError::InvalidSchema(e.to_string())),
-                        };
-                    }
+                    let trailer = self.maybe_snapshot(&ready_indices);
                     return IteratingFeedResult {
                         ready_indices,
                         complete: false,
                         error: None,
+                        trailer,
                     };
                 }
                 ParseResult::Complete => {
-                    if let Err(e) = self.engine.flush(&mut txn) {
-                        return IteratingFeedResult {
-                            ready_indices,
-                            complete: false,
-                            error: Some(AtcharaError::InvalidSchema(e)),
-                        };
-                    }
-                    if let Err(e) = txn.commit() {
-                        return IteratingFeedResult {
-                            ready_indices,
-                            complete: false,
-                            error: Some(AtcharaError::InvalidSchema(e.to_string())),
-                        };
-                    }
                     self.complete = true;
-
                     let trailing_error = self.engine.check_trailing_content();
+                    let trailer = self.maybe_snapshot(&ready_indices);
                     return IteratingFeedResult {
                         ready_indices,
                         complete: true,
                         error: trailing_error,
+                        trailer,
                     };
                 }
                 ParseResult::Error(e) => {
-                    drop(txn);
+                    let trailer = self.maybe_snapshot(&ready_indices);
                     return IteratingFeedResult {
                         ready_indices,
                         complete: false,
                         error: Some(e),
+                        trailer,
                     };
                 }
             }
         }
+    }
+
+    /// Take a trailer snapshot covering any newly-ready elements. Skips the
+    /// snapshot (returns `None`) when nothing became ready in this batch
+    /// since the JS side has nothing new to read.
+    fn maybe_snapshot(&self, ready_indices: &[u32]) -> Option<TrailerSnapshot> {
+        if ready_indices.is_empty() {
+            return None;
+        }
+        self.engine.snapshot_trailer()?.ok()
     }
 
     /// Signal EOF and run the final parse step.
@@ -683,11 +661,22 @@ impl IteratingDriver {
                 ready_indices: Vec::new(),
                 complete: true,
                 error: None,
+                trailer: None,
             };
         }
 
         self.engine.signal_eof();
         self.drain_ready()
+    }
+
+    /// Hand off the temp file to a JS-owned handle. Caller is responsible
+    /// for cleanup once this returns.
+    pub fn take_handle(&mut self, path: PathBuf) -> IteratingHandle {
+        // We don't actually own the path here — the lib.rs caller created
+        // the file and gave the handle the same path. Clear the field if
+        // we ever started holding it.
+        self.db_path = None;
+        IteratingHandle::new(path)
     }
 
     pub fn get_memory_stats(&self) -> MemoryStats {

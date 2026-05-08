@@ -32,7 +32,7 @@ export class DeferredUnion<T = unknown> implements DeferredValue<T> {
    * Return the unwrapped value.
    * The value is already the correct variant (determined during parsing).
    */
-  toValue(): T {
-    return this.store.get(this.path) as T
+  async toValue(): Promise<T> {
+    return (await this.store.get(this.path)) as T
   }
 }

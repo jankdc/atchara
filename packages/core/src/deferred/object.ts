@@ -66,10 +66,10 @@ export class DeferredObject<
   /**
    * Check if a field exists in the object.
    */
-  has<K extends keyof T>(key: K): boolean {
+  async has<K extends keyof T>(key: K): Promise<boolean> {
     const fieldKey = key as string
     const fieldPath = [...this.path, fieldKey]
-    return this.store.has(fieldPath)
+    return await this.store.has(fieldPath)
   }
 
   /**
@@ -94,7 +94,7 @@ export class DeferredObject<
   /**
    * Return the full object as-is (fully materialized).
    */
-  toValue(): T {
-    return this.store.get(this.path) as T
+  async toValue(): Promise<T> {
+    return (await this.store.get(this.path)) as T
   }
 }

@@ -227,8 +227,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputBaselineSimpleTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputBaselineSimpleTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputBaselineSimpleTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -268,8 +268,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputBaselineNestedTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -309,8 +309,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughput1kNumbersTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughput1kNumbersTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughput1kNumbersTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -350,8 +350,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughput10kNumbersTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughput10kNumbersTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughput10kNumbersTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -394,9 +394,9 @@ describe('Throughput Tests', () => {
         }
       })
 
-      bench('Atchara (Full Decode)', () => {
+      bench('Atchara (Full Decode)', async () => {
         for (let i = 0; i < 1000; i++) {
-          atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
+          await atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
         }
       })
 
@@ -442,8 +442,8 @@ describe('Throughput Tests', () => {
         atcharaSchema.parse(throughputBaselineNestedTestBytes)
       })
 
-      bench('Atchara (Full Decode)', () => {
-        atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
+      bench('Atchara (Full Decode)', async () => {
+        await atcharaSchema.parse(throughputBaselineNestedTestBytes).toValue()
       })
 
       if (zodSchema) {
@@ -484,8 +484,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputDeepNestingTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputDeepNestingTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputDeepNestingTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -525,8 +525,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputWideObjectTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputWideObjectTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputWideObjectTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -566,8 +566,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputStringHeavyTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputStringHeavyTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputStringHeavyTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -607,8 +607,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputLargeSingleObjectTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputLargeSingleObjectTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputLargeSingleObjectTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -648,8 +648,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputNullableOptionalTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputNullableOptionalTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputNullableOptionalTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -689,8 +689,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputMixedTypesTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputMixedTypesTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputMixedTypesTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -730,8 +730,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputUnionPrimitivesTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputUnionPrimitivesTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputUnionPrimitivesTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -771,8 +771,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputUnionDiscriminatedTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputUnionDiscriminatedTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputUnionDiscriminatedTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -812,8 +812,8 @@ describe('Throughput Tests', () => {
       atcharaSchema.parse(throughputUnionObjectsTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(throughputUnionObjectsTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(throughputUnionObjectsTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -899,9 +899,9 @@ describe('Validation Tests', async () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaEarlySchema.parse(validationEarlyFieldTestBytes).toValue()
+        await atcharaEarlySchema.parse(validationEarlyFieldTestBytes).toValue()
       } catch {
         // Expected to fail
       }
@@ -961,9 +961,9 @@ describe('Validation Tests', async () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaMidSchema.parse(validationMidArrayTestBytes).toValue()
+        await atcharaMidSchema.parse(validationMidArrayTestBytes).toValue()
       } catch {
         // Expected to fail
       }
@@ -1023,9 +1023,9 @@ describe('Validation Tests', async () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaLateSchema.parse(validationFailLateTestBytes).toValue()
+        await atcharaLateSchema.parse(validationFailLateTestBytes).toValue()
       } catch {
         // Expected to fail
       }
@@ -1085,9 +1085,9 @@ describe('Validation Tests', async () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaDeepSchema.parse(validationFailDeepNestedTestBytes).toValue()
+        await atcharaDeepSchema.parse(validationFailDeepNestedTestBytes).toValue()
       } catch {
         // Expected to fail
       }
@@ -1147,9 +1147,9 @@ describe('Validation Tests', async () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaUnionSchema.parse(validationFailUnionTestBytes).toValue()
+        await atcharaUnionSchema.parse(validationFailUnionTestBytes).toValue()
       } catch {
         // Expected to fail
       }
@@ -1217,9 +1217,9 @@ describe('Mixed Validity Tests', () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaSchema.parse(getMixed1kSimple70pctPayloadBytes()).toValue()
+        await atcharaSchema.parse(getMixed1kSimple70pctPayloadBytes()).toValue()
       } catch {
         // Expected for invalid payloads
       }
@@ -1282,9 +1282,9 @@ describe('Mixed Validity Tests', () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaSchema.parse(getMixed1kSimple90pctPayloadBytes()).toValue()
+        await atcharaSchema.parse(getMixed1kSimple90pctPayloadBytes()).toValue()
       } catch {
         // Expected for invalid payloads
       }
@@ -1347,9 +1347,9 @@ describe('Mixed Validity Tests', () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaSchema.parse(getMixed1kNested70pctPayloadBytes()).toValue()
+        await atcharaSchema.parse(getMixed1kNested70pctPayloadBytes()).toValue()
       } catch {
         // Expected for invalid payloads
       }
@@ -1412,9 +1412,9 @@ describe('Mixed Validity Tests', () => {
       }
     })
 
-    bench('Atchara (Full Decode)', () => {
+    bench('Atchara (Full Decode)', async () => {
       try {
-        atcharaSchema.parse(getMixed1kNested90pctPayloadBytes()).toValue()
+        await atcharaSchema.parse(getMixed1kNested90pctPayloadBytes()).toValue()
       } catch {
         // Expected for invalid payloads
       }
@@ -1478,8 +1478,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedArray1kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedArray1kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedArray1kTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -1519,8 +1519,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedArray10kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedArray10kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedArray10kTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -1560,8 +1560,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedArray50kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedArray50kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedArray50kTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -1601,8 +1601,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedRecord1kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedRecord1kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedRecord1kTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -1635,8 +1635,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedRecord10kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedRecord10kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedRecord10kTestBytes).toValue()
     })
 
     if (zodSchema) {
@@ -1669,8 +1669,8 @@ describe('Constraint Scaling Tests', () => {
       atcharaSchema.parse(constrainedRecord50kTestBytes)
     })
 
-    bench('Atchara (Full Decode)', () => {
-      atcharaSchema.parse(constrainedRecord50kTestBytes).toValue()
+    bench('Atchara (Full Decode)', async () => {
+      await atcharaSchema.parse(constrainedRecord50kTestBytes).toValue()
     })
 
     if (zodSchema) {

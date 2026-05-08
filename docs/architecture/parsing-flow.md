@@ -113,23 +113,23 @@ flowchart LR
     subgraph TypeScript
         A[User Code] --> B[Readable Stream]
         B --> C[StreamingSession.feed]
-        H[RedbStore] --> I[Deferred Wrapper]  // backed by RedbClient
+        H[KahonStore] --> I[Deferred Wrapper]  // backed by kahon-js Cursor
     end
     subgraph Rust
         C --> D[StreamingContext]
         D --> E[Parser]
-        E --> F[RedbEncoder]
-        F --> G[redb Database]
+        E --> F[KahonEncoder]
+        F --> G[Temp .kahon file]
     end
     G --> H
 ```
 
 1. **Chunks fed** — `Readable` stream chunks passed to `StreamingSession.feed()`
 2. **Incremental parsing** — `StreamingContext` manages a growable buffer, parses as data arrives
-3. **redb writes** — `RedbEncoder` writes values to redb with path-based keys
-4. **Finish** — `StreamingSession.finish()` returns a `RedbClient` handle
-5. **Deferred access** — `RedbStore` wraps the client, deferred wrappers read values on demand
-6. **Cleanup** — `result.close()` releases redb resources
+3. **kahon writes** — `KahonEncoder` streams values into a `RawWriter<File>`, memory bounded by tree depth (not document size)
+4. **Finish** — `StreamingSession.finish()` writes the kahon trailer and returns a `KahonHandle` (file path + length)
+5. **Deferred access** — `KahonStore` opens the temp file with `kahon-js`'s `FileSource`, navigates a `Cursor` for each path
+6. **Cleanup** — `result.close()` closes the FileSource and deletes the temp file
 
 ## Binary Format Reference
 

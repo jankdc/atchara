@@ -369,7 +369,7 @@ describe('Nullable Schema', () => {
 
   // Performance - sync only
   describe('Performance', () => {
-    it('should handle large nullable arrays efficiently', () => {
+    it('should handle large nullable arrays efficiently', async () => {
       const parser = array(nullable(number()))
       const largeArray = Array.from({ length: 1000 }, (_, i) => (i % 3 === 0 ? null : i))
       const input = JSON.stringify(largeArray)
@@ -378,7 +378,7 @@ describe('Nullable Schema', () => {
       const result = parser.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual(largeArray)
+      expect(await result.toValue()).toEqual(largeArray)
       expect(duration).toBeLessThan(200)
     })
   })

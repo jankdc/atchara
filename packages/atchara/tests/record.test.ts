@@ -651,49 +651,49 @@ describe('record schema', () => {
 
   // Deferred Access - sync only
   describe('Deferred Access', () => {
-    it('should return record size via size getter', () => {
+    it('should return record size via size()', async () => {
       const schema = record(number())
 
-      expect(schema.parse(b`{}`).size).toBe(0)
-      expect(schema.parse(b`{"a":1}`).size).toBe(1)
-      expect(schema.parse(b`{"a":1,"b":2,"c":3}`).size).toBe(3)
+      expect(await schema.parse(b`{}`).size()).toBe(0)
+      expect(await schema.parse(b`{"a":1}`).size()).toBe(1)
+      expect(await schema.parse(b`{"a":1,"b":2,"c":3}`).size()).toBe(3)
     })
 
-    it('should return all keys via keys()', () => {
+    it('should return all keys via keys()', async () => {
       const schema = record(boolean())
       const result = schema.parse(b`{"enabled":true,"visible":false,"active":true}`)
 
-      const keys = result.keys()
+      const keys = await result.keys()
       expect(keys).toContain('enabled')
       expect(keys).toContain('visible')
       expect(keys).toContain('active')
       expect(keys.length).toBe(3)
     })
 
-    it('should return undefined for non-existent keys', () => {
+    it('should return undefined for non-existent keys', async () => {
       const schema = record(string())
       const result = schema.parse(b`{"exists":"value"}`)
 
-      expect(result.get('missing')).toBeUndefined()
-      expect(result.get('')).toBeUndefined()
+      expect(await result.get('missing')).toBeUndefined()
+      expect(await result.get('')).toBeUndefined()
     })
 
-    it('should access values via get() without materializing the full record', () => {
+    it('should access values via get() without materializing the full record', async () => {
       const schema = record(number())
       const result = schema.parse(b`{"a":1,"b":2,"c":3}`)
 
-      expect(result.get('a')?.toValue()).toBe(1)
-      expect(result.get('b')?.toValue()).toBe(2)
-      expect(result.get('c')?.toValue()).toBe(3)
+      expect(await (await result.get('a'))?.toValue()).toBe(1)
+      expect(await (await result.get('b'))?.toValue()).toBe(2)
+      expect(await (await result.get('c'))?.toValue()).toBe(3)
     })
 
-    it('should iterate over entries with Symbol.iterator', () => {
+    it('should iterate over entries with Symbol.asyncIterator', async () => {
       const schema = record(number())
       const result = schema.parse(b`{"x":10,"y":20}`)
       const entries: Array<[string, number]> = []
 
-      for (const [key, deferred] of result) {
-        entries.push([key, deferred.toValue()])
+      for await (const [key, deferred] of result) {
+        entries.push([key, await deferred.toValue()])
       }
 
       expect(entries).toContainEqual(['x', 10])
@@ -701,42 +701,42 @@ describe('record schema', () => {
       expect(entries.length).toBe(2)
     })
 
-    it('should access nested objects via get()', () => {
+    it('should access nested objects via get()', async () => {
       const schema = record(object({ value: number() }))
       const result = schema.parse(b`{"item1":{"value":100},"item2":{"value":200}}`)
 
-      const item1 = result.get('item1')
-      expect(item1?.get('value').toValue()).toBe(100)
+      const item1 = await result.get('item1')
+      expect(await item1?.get('value').toValue()).toBe(100)
 
-      const item2 = result.get('item2')
-      expect(item2?.get('value').toValue()).toBe(200)
+      const item2 = await result.get('item2')
+      expect(await item2?.get('value').toValue()).toBe(200)
     })
 
-    it('should access arrays within records via get()', () => {
+    it('should access arrays within records via get()', async () => {
       const schema = record(array(number()))
       const result = schema.parse(b`{"nums":[1,2,3],"more":[4,5]}`)
 
-      const nums = result.get('nums')
-      expect(nums?.length).toBe(3)
-      expect(nums?.at(0)?.toValue()).toBe(1)
+      const nums = await result.get('nums')
+      expect(await nums?.length()).toBe(3)
+      expect(await (await nums?.at(0))?.toValue()).toBe(1)
 
-      const more = result.get('more')
-      expect(more?.length).toBe(2)
+      const more = await result.get('more')
+      expect(await more?.length()).toBe(2)
     })
   })
 
   // Performance - sync only
   describe('Performance', () => {
-    it('handles many entries', () => {
+    it('handles many entries', async () => {
       const schema = record(number())
       const entries = Array.from({ length: 100 }, (_, i) => `"key${i}": ${i}`)
       const json = `{${entries.join(', ')}}`
       const result = schema.parse(b`${json}`)
-      expect(result.keys().length).toBe(100)
-      expect(result.get('key50')?.toValue()).toBe(50)
+      expect((await result.keys()).length).toBe(100)
+      expect(await (await result.get('key50'))?.toValue()).toBe(50)
     })
 
-    it('handles large values efficiently', () => {
+    it('handles large values efficiently', async () => {
       const schema = record(string())
       const largeValue = 'x'.repeat(10000)
       const input = JSON.stringify({ key: largeValue })
@@ -745,11 +745,11 @@ describe('record schema', () => {
       const result = schema.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.toValue()).toEqual({ key: largeValue })
+      expect(await result.toValue()).toEqual({ key: largeValue })
       expect(duration).toBeLessThan(100)
     })
 
-    it('handles many entries efficiently', () => {
+    it('handles many entries efficiently', async () => {
       const schema = record(number())
       const data: Record<string, number> = {}
       for (let i = 0; i < 1000; i++) {
@@ -761,8 +761,8 @@ describe('record schema', () => {
       const result = schema.parse(b`${input}`)
       const duration = performance.now() - start
 
-      expect(result.keys().length).toBe(1000)
-      expect(result.get('key500')?.toValue()).toBe(500)
+      expect((await result.keys()).length).toBe(1000)
+      expect(await (await result.get('key500'))?.toValue()).toBe(500)
       expect(duration).toBeLessThan(200)
     })
   })

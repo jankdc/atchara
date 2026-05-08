@@ -48,17 +48,17 @@ export class DeferredRecord<V = unknown, D = DeferredValue<V>>
   /**
    * Get the number of entries in the record.
    */
-  get size(): number {
-    return this.keys().length
+  async size(): Promise<number> {
+    return (await this.keys()).length
   }
 
   /**
    * Get a value by key as a deferred wrapper.
    * Returns undefined if the key does not exist.
    */
-  get(key: string): D | undefined {
+  async get(key: string): Promise<D | undefined> {
     const keyPath = [...this.path, key]
-    if (!this.store.has(keyPath)) {
+    if (!(await this.store.has(keyPath))) {
       return undefined
     }
 
@@ -68,25 +68,26 @@ export class DeferredRecord<V = unknown, D = DeferredValue<V>>
   /**
    * Get all keys in the record.
    */
-  keys(): string[] {
-    return this.store.getRecordKeys(this.path)
+  async keys(): Promise<string[]> {
+    return await this.store.getRecordKeys(this.path)
   }
 
   /**
    * Iterate over record entries, deferred wrapping each value.
-   * Enables native JavaScript iteration: for (const [key, value] of record)
+   * Enables `for await (const [key, value] of record)` iteration.
    * Yields [key, DeferredValue] tuples.
    */
-  *[Symbol.iterator](): IterableIterator<[string, D]> {
-    for (const key of this.keys()) {
-      yield [key, this.get(key) as D]
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<[string, D]> {
+    for (const key of await this.keys()) {
+      const keyPath = [...this.path, key]
+      yield [key, wrapDeferred(this.store, keyPath, this.recordSchema.valueSchema) as D]
     }
   }
 
   /**
    * Return the full record as-is (fully materialized).
    */
-  toValue(): Record<string, V> {
-    return this.store.get(this.path) as Record<string, V>
+  async toValue(): Promise<Record<string, V>> {
+    return (await this.store.get(this.path)) as Record<string, V>
   }
 }

@@ -220,7 +220,7 @@ describe('Lazy Schema (Recursive Types)', () => {
   })
 
   describe('Deferred access on recursive types', () => {
-    it('should support deferred field access on recursive objects', () => {
+    it('should support deferred field access on recursive objects', async () => {
       type TreeNode = { value: number; children: TreeNode[] }
       const Node = lazy<TreeNode>(() =>
         object({
@@ -232,7 +232,7 @@ describe('Lazy Schema (Recursive Types)', () => {
       // Full materialization works via toValue()
       const result = Node.parse(b`{"value": 1, "children": [{"value": 2, "children": []}]}`)
 
-      expect(result.toValue()).toEqual({
+      expect(await result.toValue()).toEqual({
         value: 1,
         children: [{ value: 2, children: [] }],
       })
@@ -250,7 +250,7 @@ describe('Lazy Schema (Recursive Types)', () => {
       )
 
       const result = Node.parse(b`{"value": 1, "children": []}`)
-      expectTypeOf(result.toValue()).toEqualTypeOf<TreeNode>()
+      expectTypeOf(result.toValue()).toEqualTypeOf<Promise<TreeNode>>()
     })
 
     it('should infer output type for union recursion', () => {
@@ -258,7 +258,7 @@ describe('Lazy Schema (Recursive Types)', () => {
       const JsonVal = lazy<JsonValue>(() => union([number(), string(), array(JsonVal)]))
 
       const result = JsonVal.parse(b`42`)
-      expectTypeOf(result.toValue()).toEqualTypeOf<JsonValue>()
+      expectTypeOf(result.toValue()).toEqualTypeOf<Promise<JsonValue>>()
     })
 
     it('should infer output type for nullable recursion', () => {
@@ -271,7 +271,7 @@ describe('Lazy Schema (Recursive Types)', () => {
       )
 
       const result = Node.parse(b`{"value": 1, "next": null}`)
-      expectTypeOf(result.toValue()).toEqualTypeOf<ListNode>()
+      expectTypeOf(result.toValue()).toEqualTypeOf<Promise<ListNode>>()
     })
 
     it('should infer output type for optional recursion', () => {
@@ -284,7 +284,7 @@ describe('Lazy Schema (Recursive Types)', () => {
       )
 
       const result = Node.parse(b`{"value": 1}`)
-      expectTypeOf(result.toValue()).toEqualTypeOf<ListNode>()
+      expectTypeOf(result.toValue()).toEqualTypeOf<Promise<ListNode>>()
     })
   })
 })

@@ -352,31 +352,31 @@ describe('Parser Type Characteristic Performance', async () => {
 
     const numberRecordParser = record(number())
 
-    bench('Parse + Full Decode (toValue)', () => {
+    bench('Parse + Full Decode (toValue)', async () => {
       const deferred = numberRecordParser.parse(b`${largeRecordData}`)
       // Fully materialize the record
-      const _ = deferred.toValue()
+      const _ = await deferred.toValue()
     })
 
-    bench('Parse + Single Key Lookup (first)', () => {
+    bench('Parse + Single Key Lookup (first)', async () => {
       const deferred = numberRecordParser.parse(b`${largeRecordData}`)
-      const _ = deferred.get('key_0')?.toValue()
+      const _ = await (await deferred.get('key_0'))?.toValue()
     })
 
-    bench('Parse + Single Key Lookup (middle)', () => {
+    bench('Parse + Single Key Lookup (middle)', async () => {
       const deferred = numberRecordParser.parse(b`${largeRecordData}`)
-      const _ = deferred.get('key_500')?.toValue()
+      const _ = await (await deferred.get('key_500'))?.toValue()
     })
 
-    bench('Parse + Single Key Lookup (last)', () => {
+    bench('Parse + Single Key Lookup (last)', async () => {
       const deferred = numberRecordParser.parse(b`${largeRecordData}`)
-      const _ = deferred.get('key_999')?.toValue()
+      const _ = await (await deferred.get('key_999'))?.toValue()
     })
 
-    bench('Parse + 10 Key Lookups', () => {
+    bench('Parse + 10 Key Lookups', async () => {
       const deferred = numberRecordParser.parse(b`${largeRecordData}`)
       for (let i = 0; i < 10; i++) {
-        const _ = deferred.get(`key_${i * 100}`)?.toValue()
+        const _ = await (await deferred.get(`key_${i * 100}`))?.toValue()
       }
     })
   })
@@ -436,15 +436,15 @@ describe('Parser Type Characteristic Performance', async () => {
 
     const nestedRecordParser = record(record(number()))
 
-    bench('Nested Record Parse + Full Decode', () => {
+    bench('Nested Record Parse + Full Decode', async () => {
       const deferred = nestedRecordParser.parse(b`${nestedData}`)
-      const _ = deferred.toValue()
+      const _ = await deferred.toValue()
     })
 
-    bench('Nested Record Single Key Lookup', () => {
+    bench('Nested Record Single Key Lookup', async () => {
       const deferred = nestedRecordParser.parse(b`${nestedData}`)
-      const inner = deferred.get('level1_b')
-      const _ = inner?.get('inner_1')?.toValue()
+      const inner = await deferred.get('level1_b')
+      const _ = await (await inner?.get('inner_1'))?.toValue()
     })
   })
 })

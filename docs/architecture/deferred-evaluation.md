@@ -8,17 +8,17 @@ Atchara wraps all parsed values in **deferred types** that enable on-demand valu
 flowchart TD
     A[JSON + Schema] --> B{Parsing Mode}
     B -->|"parse()"| C[Binary + Offset Table]
-    B -->|"parseLarge()"| D[redb Storage]
+    B -->|"parseLarge()"| D[Kahon Temp File]
     C --> E[MemoryStore]
-    D --> F[RedbStore]
+    D --> F[KahonStore]
     E --> G[Deferred Wrappers]
     F --> G
     G -->|".get(key)"| H[Child Deferred]
     G -->|".toValue()"| I[Materialized Value]
 ```
 
-1. **Native parsing** produces values in a storage backend — binary buffer (direct) or redb (streaming)
-2. **ValueStore** (MemoryStore or RedbStore) provides path-based access without decoding everything upfront
+1. **Native parsing** produces values in a storage backend — binary buffer (direct) or a temp `.kahon` file (streaming)
+2. **ValueStore** (MemoryStore or KahonStore) provides path-based access without decoding everything upfront
 3. **Deferred wrappers** hold a reference to the store and their path, creating child wrappers on navigation
 4. **Materialization** happens only when `.toValue()` is called
 
@@ -26,17 +26,17 @@ flowchart TD
 
 All schema types have corresponding deferred wrappers:
 
-| Schema Type                                      | Deferred Wrapper       | Key Methods                                   |
-| ------------------------------------------------ | ---------------------- | --------------------------------------------- |
-| `string()`, `number()`, `boolean()`, `literal()` | `DeferredPrimitive<T>` | `toValue()`                                   |
-| `object({...})`                                  | `DeferredObject<T>`    | `get(key)`, `has(key)`, `keys()`, `toValue()` |
-| `array(...)`                                     | `DeferredArray<T>`     | `at(index)`, `length`, `toValue()`            |
-| `record(...)`                                    | `DeferredRecord<V>`    | `get(key)`, `keys()`, `size`, `toValue()`     |
-| `tuple([...])`                                   | `DeferredTuple<T>`     | `at(index)`, `toValue()`                      |
-| `nullable(...)`                                  | `DeferredNullable<T>`  | `toValue()`                                   |
-| `union([...])`                                   | `DeferredUnion<T>`     | `toValue()`                                   |
+| Schema Type                                      | Deferred Wrapper       | Key Methods                                                           |
+| ------------------------------------------------ | ---------------------- | --------------------------------------------------------------------- |
+| `string()`, `number()`, `boolean()`, `literal()` | `DeferredPrimitive<T>` | `toValue()`                                                           |
+| `object({...})`                                  | `DeferredObject<T>`    | `get(key)`, `has(key)`, `keys()`, `toValue()`                         |
+| `array(...)`                                     | `DeferredArray<T>`     | `at(index)`, `length()`, `[Symbol.asyncIterator]`, `toValue()`        |
+| `record(...)`                                    | `DeferredRecord<V>`    | `get(key)`, `keys()`, `size()`, `[Symbol.asyncIterator]`, `toValue()` |
+| `tuple([...])`                                   | `DeferredTuple<T>`     | `at(index)`, `toValue()`                                              |
+| `nullable(...)`                                  | `DeferredNullable<T>`  | `toValue()`                                                           |
+| `union([...])`                                   | `DeferredUnion<T>`     | `toValue()`                                                           |
 
-All wrappers implement `DeferredValue<T>` with a common `toValue(): T` method.
+All wrappers implement `DeferredValue<T>` with a common `toValue(): Promise<T>` method.
 
 ## Usage
 
@@ -52,8 +52,8 @@ const User = object({
 const result = User.parse(jsonBytes)
 
 // Access only what you need - other fields stay as binary
-const name = result.get('name').toValue()
-const bio = result.get('profile').get('bio').toValue()
+const name = await result.get('name').toValue()
+const bio = await result.get('profile').get('bio').toValue()
 ```
 
 ### Array Iteration
@@ -63,19 +63,19 @@ const Items = array(object({ id: number(), data: string() }))
 const result = Items.parse(jsonBytes)
 
 // Iterate lazily - each element decoded on access
-for (const item of result) {
-  console.log(item.get('id').toValue())
+for await (const item of result) {
+  console.log(await item.get('id').toValue())
 }
 
 // Or access by index
-const first = result.at(0)?.toValue()
+const first = await (await result.at(0))?.toValue()
 ```
 
 ### Full Materialization
 
 ```typescript
 // When you need the complete JavaScript value
-const fullValue = result.toValue()
+const fullValue = await result.toValue()
 ```
 
 ## Architecture
@@ -86,13 +86,16 @@ Deferred wrappers query a `ValueStore` for data access:
 
 ```typescript
 interface ValueStore {
-  get(path: string[]): unknown
-  has(path: string[]): boolean
-  getArrayLength(path: string[]): number
-  getRecordKeys(path: string[]): string[]
+  get(path: string[]): Promise<unknown>
+  has(path: string[]): Promise<boolean>
+  getArrayLength(path: string[]): Promise<number>
+  getRecordKeys(path: string[]): Promise<string[]>
   getFieldMetadata(path: string[], key: string): FieldMetadata
+  getDefs(): SerializedSchema[]
 }
 ```
+
+`get`, `has`, `getArrayLength`, and `getRecordKeys` are async because the streaming backend reads from disk. `getFieldMetadata` and `getDefs` are schema-derived and stay synchronous.
 
 ### Path-Based Navigation
 
@@ -115,12 +118,12 @@ Two `ValueStore` implementations back deferred wrappers:
 - **On-demand decoding**: Values decoded from binary only when `get()` is called
 - **Schema navigation**: Uses schema structure to locate dynamic elements (array indices, record keys)
 
-**RedbStore** — used by `parseLarge()`:
+**KahonStore** — used by `parseLarge()`:
 
-- Reads from redb persistent storage written during streaming parsing
-- **Path-based keys**: Values stored at `d:{path}`, metadata at `m:{path}:{suffix}`
-- **Object packing**: Primitive fields packed into single blobs to reduce I/O
-- **Explicit lifecycle**: Must be closed via `LargeParseResult.close()` to release resources
+- Reads from a temp `.kahon` file (random-access B+tree document) written during streaming parsing
+- **Native containers**: Kahon's array and object containers cover path-based lookups directly — no per-path key encoding
+- **Async access**: All read methods return promises, since values are loaded from disk on demand
+- **Explicit lifecycle**: Must be closed via `LargeParseResult.close()` to delete the temp file
 
 ## Type Inference
 
